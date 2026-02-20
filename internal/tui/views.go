@@ -37,7 +37,7 @@ func (m Model) viewHome() string {
 
 	statusBar := m.renderStatusBar()
 
-	return lipgloss.JoinVertical(
+	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
@@ -45,6 +45,8 @@ func (m Model) viewHome() string {
 		"",
 		statusBar,
 	)
+
+	return m.renderWithToast(mainView)
 }
 
 func (m Model) renderHostsPanel(width, height int) string {
@@ -195,7 +197,7 @@ func (m Model) viewAddHost() string {
 
 	hint := styleDim.Render("Tab/↓: next • Shift+Tab/↑: prev • Enter: save • Esc: cancel")
 
-	return lipgloss.JoinVertical(
+	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
@@ -203,4 +205,85 @@ func (m Model) viewAddHost() string {
 		"",
 		hint,
 	)
+
+	return m.renderWithToast(mainView)
+}
+
+func (m Model) viewSSH() string {
+	if m.width == 0 {
+		return "Loading..."
+	}
+
+	var header string
+	if m.sshHost != nil {
+		logo := styleLogo.Render("◈ VECNA")
+		connInfo := styleDim.Render(fmt.Sprintf(" / %s@%s", m.sshHost.User, m.sshHost.Hostname))
+		header = styleHeader.Render(logo + connInfo)
+	} else {
+		header = styleHeader.Render(styleLogo.Render("◈ VECNA"))
+	}
+
+	var content string
+	if m.connecting {
+		content = styleDim.Render("Connecting...")
+	} else if m.err != nil {
+		content = styleError.Render(fmt.Sprintf("Error: %v", m.err))
+	} else {
+		output := m.sshOutput.String()
+		if output == "" {
+			content = styleDim.Render("Connected. Waiting for output...")
+		} else {
+			content = output
+		}
+	}
+
+	terminalHeight := m.height - 4
+	if terminalHeight < 5 {
+		terminalHeight = 5
+	}
+
+	terminalWidth := m.width - 4
+
+	terminal := stylePanel.
+		Width(terminalWidth).
+		Height(terminalHeight).
+		Render(content)
+
+	statusBar := styleStatusBar.Render(keyHint("esc", "disconnect") + "  " + keyHint("q", "quit"))
+
+	mainView := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		terminal,
+		"",
+		statusBar,
+	)
+
+	return m.renderWithToast(mainView)
+}
+
+func (m Model) renderWithToast(content string) string {
+	if m.toast == "" {
+		return content
+	}
+
+	toastText := m.toast
+	maxWidth := m.width / 3
+	if len(toastText) > maxWidth {
+		toastText = toastText[:maxWidth-3] + "..."
+	}
+
+	toast := styleToast.Render(fmt.Sprintf("✕ %s", toastText))
+	toastWidth := lipgloss.Width(toast)
+
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 {
+		return content
+	}
+
+	toastLine := strings.Repeat(" ", m.width-toastWidth-2) + toast
+	lines[1] = toastLine
+
+	return strings.Join(lines, "\n")
 }

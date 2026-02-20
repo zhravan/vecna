@@ -94,6 +94,13 @@ var (
 
 	styleWarning = lipgloss.NewStyle().
 			Foreground(colorYellow)
+
+	styleToast = lipgloss.NewStyle().
+			Background(colorRed).
+			Foreground(lipgloss.Color("#1a1b26")).
+			Bold(true).
+			Padding(0, 2).
+			MarginTop(1)
 )
 
 func keyHint(k, desc string) string {
