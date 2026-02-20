@@ -1,6 +1,6 @@
 # Vecna
 
-Minimalist SSH manager with TUI.
+Simplify ssh-ing with minimalistic TUI.
 
 ## Install
 

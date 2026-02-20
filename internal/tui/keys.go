@@ -3,16 +3,20 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Up      key.Binding
-	Down    key.Binding
-	Enter   key.Binding
-	Back    key.Binding
-	Quit    key.Binding
-	Help    key.Binding
-	Add     key.Binding
-	Delete  key.Binding
-	Edit    key.Binding
-	Connect key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Enter    key.Binding
+	Back     key.Binding
+	Quit     key.Binding
+	Help     key.Binding
+	Add      key.Binding
+	Delete   key.Binding
+	Edit     key.Binding
+	Connect  key.Binding
+	Tab      key.Binding
+	ShiftTab key.Binding
+	SFTP     key.Binding
+	Forward  key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -56,6 +60,22 @@ func DefaultKeyMap() KeyMap {
 		Connect: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "connect"),
+		),
+		Tab: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next field"),
+		),
+		ShiftTab: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "prev field"),
+		),
+		SFTP: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "sftp"),
+		),
+		Forward: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "port forward"),
 		),
 	}
 }

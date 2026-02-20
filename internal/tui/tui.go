@@ -39,27 +39,20 @@ func New() Model {
 func (m *Model) initAddHostInputs() {
 	m.inputs = make([]textinput.Model, 4)
 
-	m.inputs[0] = textinput.New()
-	m.inputs[0].Placeholder = "myserver"
-	m.inputs[0].Focus()
-	m.inputs[0].Prompt = "Name: "
-	m.inputs[0].CharLimit = 64
+	for i := range m.inputs {
+		m.inputs[i] = textinput.New()
+		m.inputs[i].Prompt = ""
+		m.inputs[i].CharLimit = 256
+		m.inputs[i].Width = 40
+	}
 
-	m.inputs[1] = textinput.New()
-	m.inputs[1].Placeholder = "192.168.1.100 or hostname.com"
-	m.inputs[1].Prompt = "Host: "
-	m.inputs[1].CharLimit = 256
-
-	m.inputs[2] = textinput.New()
+	m.inputs[0].Placeholder = "e.g. prod-server"
+	m.inputs[1].Placeholder = "192.168.1.100 or host.example.com"
 	m.inputs[2].Placeholder = "root"
-	m.inputs[2].Prompt = "User: "
-	m.inputs[2].CharLimit = 64
-
-	m.inputs[3] = textinput.New()
 	m.inputs[3].Placeholder = "22"
-	m.inputs[3].Prompt = "Port: "
 	m.inputs[3].CharLimit = 5
 
+	m.inputs[0].Focus()
 	m.inputFocus = 0
 }
 
@@ -122,38 +115,60 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateAddHost(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Back):
+	// Handle special keys first
+	switch msg.String() {
+	case "esc":
 		m.view = ViewHome
 		m.inputs = nil
 		return m, nil
 
-	case key.Matches(msg, m.keys.Enter):
+	case "enter":
 		if m.inputFocus < len(m.inputs)-1 {
 			m.inputs[m.inputFocus].Blur()
 			m.inputFocus++
 			return m, m.inputs[m.inputFocus].Focus()
 		}
-		m.saveHost()
-		m.view = ViewHome
-		m.inputs = nil
+		if m.inputs[0].Value() != "" && m.inputs[1].Value() != "" {
+			m.saveHost()
+			m.view = ViewHome
+			m.inputs = nil
+		}
 		return m, nil
 
-	case key.Matches(msg, m.keys.Up):
+	case "tab":
+		if m.inputFocus < len(m.inputs)-1 {
+			m.inputs[m.inputFocus].Blur()
+			m.inputFocus++
+			return m, m.inputs[m.inputFocus].Focus()
+		}
+		return m, nil
+
+	case "shift+tab":
 		if m.inputFocus > 0 {
 			m.inputs[m.inputFocus].Blur()
 			m.inputFocus--
 			return m, m.inputs[m.inputFocus].Focus()
 		}
+		return m, nil
 
-	case key.Matches(msg, m.keys.Down):
+	case "up":
+		if m.inputFocus > 0 {
+			m.inputs[m.inputFocus].Blur()
+			m.inputFocus--
+			return m, m.inputs[m.inputFocus].Focus()
+		}
+		return m, nil
+
+	case "down":
 		if m.inputFocus < len(m.inputs)-1 {
 			m.inputs[m.inputFocus].Blur()
 			m.inputFocus++
 			return m, m.inputs[m.inputFocus].Focus()
 		}
+		return m, nil
 	}
 
+	// Let textinput handle all other keys (including 'k', 'j', etc.)
 	var cmd tea.Cmd
 	m.inputs[m.inputFocus], cmd = m.inputs[m.inputFocus].Update(msg)
 	return m, cmd

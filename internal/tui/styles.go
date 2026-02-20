@@ -3,27 +3,99 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	subtle    = lipgloss.AdaptiveColor{Light: "#666", Dark: "#888"}
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
+	colorBg        = lipgloss.Color("#1a1b26")
+	colorFg        = lipgloss.Color("#c0caf5")
+	colorSubtle    = lipgloss.Color("#565f89")
+	colorHighlight = lipgloss.Color("#7aa2f7")
+	colorGreen     = lipgloss.Color("#9ece6a")
+	colorRed       = lipgloss.Color("#f7768e")
+	colorYellow    = lipgloss.Color("#e0af68")
+	colorCyan      = lipgloss.Color("#7dcfff")
+	colorPurple    = lipgloss.Color("#bb9af7")
 
-	Title = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(highlight)
+	baseBorder = lipgloss.Border{
+		Top:         "─",
+		Bottom:      "─",
+		Left:        "│",
+		Right:       "│",
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "╰",
+		BottomRight: "╯",
+	}
 
-	Subtle = lipgloss.NewStyle().
-		Foreground(subtle)
+	styleApp = lipgloss.NewStyle()
 
-	Active = lipgloss.NewStyle().
-		Foreground(special).
-		Bold(true)
-
-	Box = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(subtle).
-		Padding(0, 1)
-
-	StatusBar = lipgloss.NewStyle().
-			Foreground(subtle).
+	styleHeader = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorHighlight).
 			Padding(0, 1)
+
+	styleLogo = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPurple)
+
+	stylePanel = lipgloss.NewStyle().
+			Border(baseBorder).
+			BorderForeground(colorSubtle).
+			Padding(0, 1)
+
+	stylePanelActive = lipgloss.NewStyle().
+				Border(baseBorder).
+				BorderForeground(colorHighlight).
+				Padding(0, 1)
+
+	stylePanelTitle = lipgloss.NewStyle().
+			Foreground(colorSubtle).
+			Bold(true)
+
+	styleListItem = lipgloss.NewStyle().
+			Foreground(colorFg)
+
+	styleListItemSelected = lipgloss.NewStyle().
+				Foreground(colorGreen).
+				Bold(true)
+
+	styleListItemDim = lipgloss.NewStyle().
+				Foreground(colorSubtle)
+
+	styleStatusOnline = lipgloss.NewStyle().
+				Foreground(colorGreen)
+
+	styleStatusOffline = lipgloss.NewStyle().
+				Foreground(colorRed)
+
+	styleStatusBar = lipgloss.NewStyle().
+			Foreground(colorSubtle).
+			Padding(0, 1)
+
+	styleKey = lipgloss.NewStyle().
+			Foreground(colorCyan).
+			Bold(true)
+
+	styleKeyDesc = lipgloss.NewStyle().
+			Foreground(colorSubtle)
+
+	styleInputLabel = lipgloss.NewStyle().
+			Foreground(colorHighlight).
+			Bold(true)
+
+	styleInputField = lipgloss.NewStyle().
+			Foreground(colorFg)
+
+	styleDim = lipgloss.NewStyle().
+			Foreground(colorSubtle)
+
+	styleSuccess = lipgloss.NewStyle().
+			Foreground(colorGreen)
+
+	styleError = lipgloss.NewStyle().
+			Foreground(colorRed)
+
+	styleWarning = lipgloss.NewStyle().
+			Foreground(colorYellow)
 )
+
+func keyHint(k, desc string) string {
+	return styleKey.Render(k) + styleKeyDesc.Render(":"+desc)
+}
