@@ -1,0 +1,2 @@
+# vecna
+simplify ssh 
