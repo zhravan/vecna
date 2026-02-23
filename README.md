@@ -18,6 +18,8 @@ make build
 ./bin/vecna
 ```
 
+  `make install` also copies `config.example.yaml` to `~/.config/vecna/config.yaml` if that file doesn’t exist (so Run command has default commands).
+
 ## Usage
 
 ```bash
@@ -28,6 +30,17 @@ vecna version  # Print version
 ## Config
 
 **Path:** `~/.config/vecna/config.yaml`
+
+An example config is included in the repo. Copy it and edit (or run `make install`, which does this for you if no config exists yet):
+
+```bash
+mkdir -p ~/.config/vecna
+cp config.example.yaml ~/.config/vecna/config.yaml
+```
+
+If **Run command** (r) shows “No saved commands”, add a `commands` block to your config (see example below) or replace your config with the example.
+
+Example contents:
 
 ```yaml
 hosts:
@@ -52,7 +65,8 @@ commands:                  # optional: saved commands for "Run command" (r)
 
 Issues and PRs welcome. Tag releases with semver (`v1.0.0`); CI builds and publishes.
 
-## About
+<details>
+<summary><strong>About</strong></summary>
 
 I spend a lot of time on servers and bare metals for deployments, containerizing dev environments, self-hosted setups. That means a lot of SSH sessions. Jumping between servers. Moving files across machines. Running repetitive ops commands.
 
@@ -67,6 +81,8 @@ That led to Vecna (yes, Stranger Things reference, lol yep xD).
 Idea: centralize control, reduce friction, make SSH-driven workflows better and more structured.
 
 It is still in a very early stage, mostly ideation and foundational building, but if this problem space resonates with you, feel free to explore the repo.
+
+</details>
 
 ## License
 
