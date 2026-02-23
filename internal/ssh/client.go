@@ -79,9 +79,9 @@ func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host,
 		return nil, fmt.Errorf("failed to get stderr: %w", err)
 	}
 
-	// Start bash explicitly so we avoid the remote user's default shell (e.g. zsh/oh-my-zsh)
-	// which can cause typing/autocomplete quirks. Use -l for login shell so .bash_profile is loaded.
-	if err := session.Start("bash -l"); err != nil {
+	// Start bash with no rc/profile so we get one clean window (no "logging into bash from zsh" etc).
+	// User can run "source ~/.bashrc" or "bash -l" in-session if they want their full env.
+	if err := session.Start("bash --norc --noprofile -i"); err != nil {
 		stdin.Close()
 		session.Close()
 		client.Close()

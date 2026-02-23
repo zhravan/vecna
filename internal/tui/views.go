@@ -549,7 +549,13 @@ func (m Model) renderTabBar() string {
 			parts = append(parts, styleTab.Render(title))
 		}
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	line := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	// Keep tab bar to one line so it never pushes off screen; truncate if too wide.
+	if m.width > 4 && utf8.RuneCountInString(line) > m.width {
+		runes := []rune(line)
+		line = string(runes[:m.width-3]) + "…"
+	}
+	return line
 }
 
 func (m Model) viewSSHTab(t tab) string {
@@ -581,8 +587,8 @@ func (m Model) viewSSHTab(t tab) string {
 		if termWidth < 40 {
 			termWidth = 40
 		}
-		// Reserve 1 line for tab bar, 1 for status bar so the full view fits on screen.
-		termHeight := m.height - 3
+		// Reserve space for tab bar (1) + status bar (1) + headroom so tab bar is never scrolled off.
+		termHeight := m.height - 4
 		if termHeight < 5 {
 			termHeight = 5
 		}

@@ -387,7 +387,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tabs[i].Session = msg.session
 				m.tabs[i].Log = append(m.tabs[i].Log, "✓ Connected")
 				m.tabs[i].Output = ""
-				cols, rows := m.width, m.height-3
+				cols, rows := m.width, m.height-4
 				if cols < 80 {
 					cols = 80
 				}
@@ -455,7 +455,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.currentTabIndex >= 0 && m.currentTabIndex < len(m.tabs) && m.tabs[m.currentTabIndex].Session != nil {
-			rows := msg.Height - 3
+			rows := msg.Height - 4
 			if rows < 24 {
 				rows = 24
 			}
@@ -1132,6 +1132,7 @@ func (m Model) View() string {
 	full := lipgloss.JoinVertical(lipgloss.Left, tabBar, body)
 	// Cap total lines so the tab bar (line 1) is never scrolled off.
 	if m.height > 0 {
+		full = strings.ReplaceAll(full, "\r\n", "\n")
 		lines := strings.Split(full, "\n")
 		if len(lines) > m.height {
 			lines = lines[:m.height]
