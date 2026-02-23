@@ -16,7 +16,9 @@ type KeyMap struct {
 	Tab      key.Binding
 	ShiftTab key.Binding
 	SFTP     key.Binding
-	Forward  key.Binding
+	Forward    key.Binding
+	RunCommand key.Binding
+	Transfer   key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -76,6 +78,14 @@ func DefaultKeyMap() KeyMap {
 		Forward: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "port forward"),
+		),
+		RunCommand: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "run cmd"),
+		),
+		Transfer: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "transfer"),
 		),
 	}
 }
