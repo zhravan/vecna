@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/shravan20/vecna/internal/config"
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
@@ -1060,18 +1061,21 @@ func (m *Model) saveHost() {
 }
 
 func (m Model) View() string {
+	tabBar := m.renderTabBar()
+	var body string
 	switch m.view {
 	case ViewAddHost:
-		return m.viewAddHost()
+		body = m.viewAddHost()
 	case ViewPortForward:
-		return m.viewPortForward()
+		body = m.viewPortForward()
 	case ViewRunCommand:
-		return m.viewRunCommand()
+		body = m.viewRunCommand()
 	case ViewFileTransfer:
-		return m.viewFileTransfer()
+		body = m.viewFileTransfer()
 	default:
-		return m.viewWithTabs()
+		body = m.viewTabContent()
 	}
+	return lipgloss.JoinVertical(lipgloss.Left, tabBar, body)
 }
 
 type sshOutputMsg struct {

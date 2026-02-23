@@ -450,17 +450,15 @@ func (m Model) viewFileTransfer() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
 }
 
-func (m Model) viewWithTabs() string {
-	tabBar := m.renderTabBar()
-	var content string
+// viewTabContent returns the main area content when in tab view (Hosts or current SSH tab). No tab bar.
+func (m Model) viewTabContent() string {
 	if m.currentTabIndex == 0 {
-		content = m.viewHome()
-	} else if m.currentTabIndex < len(m.tabs) {
-		content = m.viewSSHTab(m.tabs[m.currentTabIndex])
-	} else {
-		content = m.viewHome()
+		return m.viewHome()
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, tabBar, content)
+	if m.currentTabIndex < len(m.tabs) {
+		return m.viewSSHTab(m.tabs[m.currentTabIndex])
+	}
+	return m.viewHome()
 }
 
 func (m Model) renderTabBar() string {
