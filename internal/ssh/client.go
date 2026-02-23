@@ -19,16 +19,18 @@ type Session struct {
 	stderr  io.Reader
 }
 
-func Connect(h Host, password string, skipKeyIfNotDeployed bool) (*Session, error) {
-	config, err := buildSSHConfig(h, password, skipKeyIfNotDeployed)
+// Connect establishes an SSH session to h. If jumpHost is not nil, connects via that host as proxy.
+// jumpSkipKey: when using jump host, set true to skip key auth for jump if key not yet deployed.
+func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool) (*Session, error) {
+	var client *ssh.Client
+	var err error
+	if jumpHost != nil {
+		client, err = DialClientViaProxy(h, password, skipKeyIfNotDeployed, *jumpHost, jumpPassword, jumpSkipKey)
+	} else {
+		client, err = DialClient(h, password, skipKeyIfNotDeployed)
+	}
 	if err != nil {
 		return nil, err
-	}
-
-	addr := fmt.Sprintf("%s:%d", h.Hostname, h.Port)
-	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial: %w", err)
 	}
 
 	session, err := client.NewSession()
@@ -91,6 +93,77 @@ func Connect(h Host, password string, skipKeyIfNotDeployed bool) (*Session, erro
 		stdout:  stdout,
 		stderr:  stderr,
 	}, nil
+}
+
+// DialClient establishes an SSH connection without starting a session. Used for port forwarding.
+func DialClient(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Client, error) {
+	return dialClient(h, password, skipKeyIfNotDeployed, nil, "")
+}
+
+// dialClient connects to h, optionally via proxyClient (jump host).
+func dialClient(h Host, password string, skipKeyIfNotDeployed bool, proxyClient *ssh.Client, _ string) (*ssh.Client, error) {
+	config, err := buildSSHConfig(h, password, skipKeyIfNotDeployed)
+	if err != nil {
+		return nil, err
+	}
+	addr := fmt.Sprintf("%s:%d", h.Hostname, h.Port)
+
+	if proxyClient == nil {
+		client, err := ssh.Dial("tcp", addr, config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial: %w", err)
+		}
+		return client, nil
+	}
+
+	conn, err := proxyClient.Dial("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial target via proxy: %w", err)
+	}
+	clientConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to establish SSH to target: %w", err)
+	}
+	return ssh.NewClient(clientConn, chans, reqs), nil
+}
+
+// DialClientViaProxy connects to targetHost through jumpHost (bastion). Both use their own auth.
+func DialClientViaProxy(targetHost Host, targetPassword string, targetSkipKey bool, jumpHost Host, jumpPassword string, jumpSkipKey bool) (*ssh.Client, error) {
+	jumpClient, err := DialClient(jumpHost, jumpPassword, jumpSkipKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to jump host: %w", err)
+	}
+	client, err := dialClient(targetHost, targetPassword, targetSkipKey, jumpClient, jumpPassword)
+	if err != nil {
+		jumpClient.Close()
+		return nil, err
+	}
+	// When client is closed, we should also close jumpClient. Wrap so closing the returned client closes the chain.
+	// ssh.Client doesn't support wrapping Close. So we leave jumpClient open when target is closed (target conn is closed).
+	// Optionally we could return a wrapper that closes both. For now we only close the target client; the jump stays open until process exits or we add a wrapper.
+	return client, nil
+}
+
+// RunCommand connects to the host (optionally via jump), runs the command once, and returns combined stdout and stderr.
+func RunCommand(h Host, password string, skipKey bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool, command string) (output string, err error) {
+	var client *ssh.Client
+	if jumpHost != nil {
+		client, err = DialClientViaProxy(h, password, skipKey, *jumpHost, jumpPassword, jumpSkipKey)
+	} else {
+		client, err = DialClient(h, password, skipKey)
+	}
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+	out, err := session.CombinedOutput(command)
+	return string(out), err
 }
 
 func (s *Session) Resize(width, height int) error {

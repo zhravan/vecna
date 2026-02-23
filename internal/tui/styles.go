@@ -112,6 +112,19 @@ var (
 	stylePurple = lipgloss.NewStyle().
 			Foreground(colorPurple).
 			Bold(true)
+
+	styleTab = lipgloss.NewStyle().
+			Foreground(colorSubtle).
+			Padding(0, 2).
+			Border(lipgloss.RoundedBorder(), false, false, true, false).
+			BorderForeground(colorSubtle)
+
+	styleTabActive = lipgloss.NewStyle().
+			Foreground(colorHighlight).
+			Bold(true).
+			Padding(0, 2).
+			Border(lipgloss.RoundedBorder(), false, false, true, false).
+			BorderForeground(colorHighlight)
 )
 
 func keyHint(k, desc string) string {
