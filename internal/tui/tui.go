@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,6 +94,12 @@ type Model struct {
 	transferFocus   int
 	transferOutput  string
 	transferRunning bool
+
+	// Last SSH connection time per host name (for details panel)
+	lastSSHAt map[string]time.Time
+	// Active SSH count from server (who | wc -l); -1 = unknown/error
+	activeSSHCountByHost   map[string]int
+	fetchingActiveSSHForHost string
 }
 
 type activeForward struct {
@@ -147,8 +154,10 @@ func New() Model {
 		hosts:            config.GetHosts(),
 		hostFilter:       f,
 		homeFocus:        0,
-		selectedHostNames: make(map[string]bool),
-		tabs:             []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
+		selectedHostNames:     make(map[string]bool),
+		lastSSHAt:             make(map[string]time.Time),
+		activeSSHCountByHost: make(map[string]int),
+		tabs:                  []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
 		currentTabIndex:  0,
 		nextTabId:        1,
 	}
@@ -276,6 +285,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "1":
 				m.currentTabIndex = 0
+				entries := m.filteredHostEntries()
+				if len(entries) > 0 && m.cursor < len(entries) {
+					m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+					return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+				}
 				return m, nil
 			case "2", "3", "4", "5", "6", "7", "8", "9":
 				idx := int(msg.String()[0] - '1') // 1->0, 2->1, 3->2, ...
@@ -387,6 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tabs[i].Session = msg.session
 				m.tabs[i].Log = append(m.tabs[i].Log, "✓ Connected")
 				m.tabs[i].Output = ""
+				m.lastSSHAt[m.tabs[i].Host.Name] = time.Now()
 				cols, rows := m.width, m.height-4
 				if cols < 80 {
 					cols = 80
@@ -439,6 +454,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.runCommandMultiResults = msg.results
 		return m, nil
 
+	case activeSSHCountResultMsg:
+		m.fetchingActiveSSHForHost = ""
+		m.activeSSHCountByHost[msg.HostName] = msg.Count
+		return m, nil
+
 	case transferResultMsg:
 		m.transferRunning = false
 		if msg.err != nil {
@@ -460,6 +480,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rows = 24
 			}
 			m.tabs[m.currentTabIndex].Session.Resize(msg.Width, rows)
+		}
+		// Lazy-fetch server active SSH count when on Hosts tab and we don't have it yet
+		entries := m.filteredHostEntries()
+		if m.currentTabIndex == 0 && len(entries) > 0 && m.cursor < len(entries) {
+			h := entries[m.cursor].Host.Name
+			if _, ok := m.activeSSHCountByHost[h]; !ok && m.fetchingActiveSSHForHost != h {
+				m.fetchingActiveSSHForHost = h
+				return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+			}
 		}
 
 	case tea.MouseMsg:
@@ -533,12 +562,22 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
+			if len(entries) > 0 {
+				m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+				return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+			}
 		}
+		return m, nil
 
 	case key.Matches(msg, m.keys.Down):
 		if m.cursor < len(entries)-1 {
 			m.cursor++
+			if len(entries) > 0 {
+				m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+				return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+			}
 		}
+		return m, nil
 
 	case key.Matches(msg, m.keys.ToggleSelect):
 		if len(entries) > 0 && m.cursor < len(entries) {
@@ -1185,6 +1224,11 @@ type transferResultMsg struct {
 	err    error
 }
 
+type activeSSHCountResultMsg struct {
+	HostName string
+	Count    int // -1 on error
+}
+
 func runCommandCmd(host config.Host, command string) tea.Msg {
 	sshHost := ssh.Host{
 		Name:         host.Name,
@@ -1225,6 +1269,22 @@ func runCommandCmd(host config.Host, command string) tea.Msg {
 	}
 	out, err := ssh.RunCommand(sshHost, password, skipKey, jumpHost, jumpPassword, jumpSkipKey, command)
 	return runCommandResultMsg{output: out, err: err}
+}
+
+// fetchActiveSSHCountCmd runs "who 2>/dev/null | wc -l" on the host and returns the count (from server).
+func fetchActiveSSHCountCmd(host config.Host) tea.Cmd {
+	return func() tea.Msg {
+		out := runCommandCmd(host, "who 2>/dev/null | wc -l")
+		res, _ := out.(runCommandResultMsg)
+		count := -1
+		if res.err == nil && res.output != "" {
+			n, parseErr := strconv.Atoi(strings.TrimSpace(strings.TrimRight(res.output, "\n")))
+			if parseErr == nil && n >= 0 {
+				count = n
+			}
+		}
+		return activeSSHCountResultMsg{HostName: host.Name, Count: count}
+	}
 }
 
 // runCommandCmdMulti runs the command on each host and returns combined results (runs sequentially).

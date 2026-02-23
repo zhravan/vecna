@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -216,6 +217,30 @@ func (m Model) renderDetailPanel(width, height int) string {
 		}
 		if h.ProxyJump != "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Jump"), h.ProxyJump))
+		}
+		// Active SSH count from server (who | wc -l)
+		var activeSSHStr string
+		if m.fetchingActiveSSHForHost == h.Name {
+			activeSSHStr = "…"
+		} else if count, ok := m.activeSSHCountByHost[h.Name]; ok && count >= 0 {
+			activeSSHStr = fmt.Sprintf("%d", count)
+		} else {
+			activeSSHStr = "—"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Active SSH"), activeSSHStr))
+		if at, ok := m.lastSSHAt[h.Name]; ok {
+			ago := time.Since(at)
+			var lastStr string
+			if ago < time.Minute {
+				lastStr = "just now"
+			} else if ago < time.Hour {
+				lastStr = fmt.Sprintf("%d min ago", int(ago.Minutes()))
+			} else if ago < 24*time.Hour {
+				lastStr = fmt.Sprintf("%d hr ago", int(ago.Hours()))
+			} else {
+				lastStr = at.Format("Jan 2 15:04")
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Last SSH "), lastStr))
 		}
 
 		lines = append(lines, "")
