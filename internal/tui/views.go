@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -475,6 +477,7 @@ func (m Model) viewRunCommand() string {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", loader)
 	}
 
+	entries := m.filteredCommandEntries()
 	var listLines []string
 	if len(m.runCommandHosts) > 1 {
 		names := make([]string, 0, len(m.runCommandHosts))
@@ -484,16 +487,21 @@ func (m Model) viewRunCommand() string {
 		listLines = append(listLines, styleDim.Render("  On: "+strings.Join(names, ", ")))
 		listLines = append(listLines, "")
 	}
-	if len(commands) == 0 {
-		listLines = append(listLines, styleDim.Render("  No saved commands"))
-		listLines = append(listLines, styleDim.Render("  Add to config: commands: [{ label: \"...\", command: \"...\" }]"))
+	listLines = append(listLines, "", "Filter: "+m.runCommandFilter.View(), "")
+	if len(entries) == 0 {
+		listLines = append(listLines, styleDim.Render("  No commands (type in filter to search)"))
+		if len(commands) == 0 {
+			listLines = append(listLines, styleDim.Render("  Add to config: commands: [{ label: \"...\", command: \"...\" }]"))
+		}
 	} else {
-		for i, c := range commands {
+		for i, e := range entries {
+			c := e.Command
+			active := i == m.runCommandCursor
 			line := fmt.Sprintf("  %s", c.Label)
-			if c.Command != "" {
+			if active && c.Command != "" {
 				line += styleDim.Render("  → "+c.Command)
 			}
-			if i == m.runCommandCursor {
+			if active {
 				line = " ▸ " + styleListItemSelected.Render(line)
 			} else {
 				line = "   " + styleListItem.Render(line)
@@ -503,7 +511,7 @@ func (m Model) viewRunCommand() string {
 	}
 	list := strings.Join(listLines, "\n")
 	panel := stylePanelActive.Width(60).Padding(1, 2).Render(list)
-	status := styleStatusBar.Render(keyHint("↑↓", "nav") + "  " + keyHint("⏎", "run") + "  " + keyHint("esc", "back"))
+	status := styleStatusBar.Render(keyHint("/", "filter") + "  " + keyHint("↑↓", "nav") + "  " + keyHint("⏎", "run") + "  " + keyHint("esc", "back"))
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
 }
 
@@ -534,20 +542,201 @@ func (m Model) viewFileTransfer() string {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", loader)
 	}
 
-	labels := []string{"Direction (push/pull)", "Local path", "Remote path"}
-	var fields []string
-	for i, input := range m.transferInputs {
-		l := labels[i]
-		if i == m.transferFocus {
-			fields = append(fields, styleInputLabel.Render(l+":")+"\n"+input.View())
+	// Host→Host mode: source host + path, dest host + path
+	if m.transferMode == 1 {
+		return m.viewFileTransferHostToHost(header)
+	}
+
+	// Two-pane browser: Local | Remote (with scroll and filter)
+	panelW := (m.width - 4) / 2
+	if panelW < 20 {
+		panelW = 20
+	}
+	maxRows := m.height - 8
+	if maxRows < 3 {
+		maxRows = 3
+	}
+
+	visLocal := filterTransferEntries(m.transferLocalEntries, m.transferLocalFilter)
+	visRemote := filterTransferEntries(m.transferRemoteEntries, m.transferRemoteFilter)
+
+	// Scroll window: show entries [start : start+maxRows], keep cursor in view
+	leftStart := m.transferLocalOffset
+	if m.transferLocalCursor < leftStart {
+		leftStart = m.transferLocalCursor
+	}
+	if m.transferLocalCursor >= leftStart+maxRows {
+		leftStart = m.transferLocalCursor - maxRows + 1
+	}
+	if leftStart > len(visLocal)-maxRows && len(visLocal) > maxRows {
+		leftStart = len(visLocal) - maxRows
+	}
+	if leftStart < 0 {
+		leftStart = 0
+	}
+	rightStart := m.transferRemoteOffset
+	if m.transferRemoteCursor < rightStart {
+		rightStart = m.transferRemoteCursor
+	}
+	if m.transferRemoteCursor >= rightStart+maxRows {
+		rightStart = m.transferRemoteCursor - maxRows + 1
+	}
+	if rightStart > len(visRemote)-maxRows && len(visRemote) > maxRows {
+		rightStart = len(visRemote) - maxRows
+	}
+	if rightStart < 0 {
+		rightStart = 0
+	}
+
+	leftTitle := " LOCAL "
+	if m.transferFocusPanel == 0 {
+		leftTitle = " LOCAL ◀ "
+	}
+	if m.transferLocalFilter != "" {
+		leftTitle += styleDim.Render(" [/" + m.transferLocalFilter + "]")
+	}
+	rightTitle := " REMOTE "
+	if m.transferFocusPanel == 1 {
+		rightTitle = " REMOTE ◀ "
+	}
+	if m.transferRemoteFilter != "" {
+		rightTitle += styleDim.Render(" [/" + m.transferRemoteFilter + "]")
+	}
+
+	leftLines := []string{stylePanelTitle.Render(leftTitle), styleDim.Render(m.transferLocalCwd), ""}
+	leftEnd := leftStart + maxRows
+	if leftEnd > len(visLocal) {
+		leftEnd = len(visLocal)
+	}
+	for j := leftStart; j < leftEnd; j++ {
+		e := visLocal[j]
+		line := "  "
+		if e.IsDir {
+			line += "📁 " + e.Name + "/"
 		} else {
-			fields = append(fields, styleDim.Render(l+":")+"\n"+input.View())
+			line += "📄 " + e.Name
+			if e.Size >= 0 {
+				line += styleDim.Render(fmt.Sprintf("  (%d)", e.Size))
+			}
+		}
+		full := m.transferLocalCwd + string(filepath.Separator) + e.Name
+		if m.transferSelectedLocal != nil && m.transferSelectedLocal[full] {
+			line = "▣ " + line
+		} else {
+			line = "  " + line
+		}
+		if j == m.transferLocalCursor {
+			line = styleListItemSelected.Render(line)
+		} else {
+			line = styleListItem.Render(line)
+		}
+		leftLines = append(leftLines, line)
+	}
+	leftPanel := stylePanel.Width(panelW).Height(maxRows + 3).Render(strings.Join(leftLines, "\n"))
+
+	rightLines := []string{stylePanelTitle.Render(rightTitle), styleDim.Render(m.transferRemoteCwd), ""}
+	if m.transferRemoteLoading {
+		rightLines = append(rightLines, styleDim.Render("  Loading..."))
+	} else {
+		rightEnd := rightStart + maxRows
+		if rightEnd > len(visRemote) {
+			rightEnd = len(visRemote)
+		}
+		for j := rightStart; j < rightEnd; j++ {
+			e := visRemote[j]
+			line := "  "
+			if e.IsDir {
+				line += "📁 " + e.Name + "/"
+			} else {
+				line += "📄 " + e.Name
+				if e.Size >= 0 {
+					line += styleDim.Render(fmt.Sprintf("  (%d)", e.Size))
+				}
+			}
+			full := path.Join(m.transferRemoteCwd, e.Name)
+			if m.transferSelectedRemote != nil && m.transferSelectedRemote[full] {
+				line = "▣ " + line
+			} else {
+				line = "  " + line
+			}
+			if j == m.transferRemoteCursor {
+				line = styleListItemSelected.Render(line)
+			} else {
+				line = styleListItem.Render(line)
+			}
+			rightLines = append(rightLines, line)
 		}
 	}
-	form := strings.Join(fields, "\n\n")
-	panel := stylePanelActive.Width(55).Padding(1, 2).Render(form)
-	status := styleStatusBar.Render(keyHint("Tab", "next") + "  " + keyHint("Enter", "run") + "  " + keyHint("esc", "back"))
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
+	rightPanel := stylePanel.Width(panelW).Height(maxRows + 3).Render(strings.Join(rightLines, "\n"))
+
+	if m.transferFocusPanel == 1 {
+		rightPanel = stylePanelActive.Width(panelW).Height(maxRows + 3).Render(strings.Join(rightLines, "\n"))
+	} else {
+		leftPanel = stylePanelActive.Width(panelW).Height(maxRows + 3).Render(strings.Join(leftLines, "\n"))
+	}
+
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", rightPanel)
+	statusStr := keyHint("Tab", "switch") + "  " +
+		keyHint("↑↓", "nav") + "  " +
+		keyHint("/", "search") + "  " +
+		keyHint("~", "home") + "  " +
+		keyHint("\\", "root") + "  " +
+		keyHint("⌫", "parent") + "  " +
+		keyHint("space", "select") + "  " +
+		keyHint("⏎", "open/transfer") + "  " +
+		keyHint("m", "Host→Host") + "  " +
+		keyHint("esc", "back")
+	if m.transferFilterFocused {
+		statusStr = styleKey.Render("Filter: ") + m.transferFilterInput.View() + "  " + styleDim.Render("(Enter apply, Esc cancel)")
+	}
+	status := styleStatusBar.Render(statusStr)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", panels, "", status)
+}
+
+func (m Model) viewFileTransferHostToHost(header string) string {
+	hosts := config.GetHosts()
+	panelW := (m.width - 4) / 2
+	if panelW < 24 {
+		panelW = 24
+	}
+	leftLines := []string{stylePanelTitle.Render(" SOURCE "), ""}
+	for i, h := range hosts {
+		line := "  " + h.Name + "  " + styleDim.Render(fmt.Sprintf("%s@%s", h.User, h.Hostname))
+		if i == m.transferSourceHostIdx {
+			line = "▸ " + styleListItemSelected.Render(line)
+		} else {
+			line = "  " + styleListItem.Render(line)
+		}
+		leftLines = append(leftLines, line)
+	}
+	leftLines = append(leftLines, "", styleInputLabel.Render("Path:"), m.transferSourcePathInput.View())
+	leftPanel := stylePanel.Width(panelW).Render(strings.Join(leftLines, "\n"))
+	if m.transferHostHostFocus == 0 || m.transferHostHostFocus == 1 {
+		leftPanel = stylePanelActive.Width(panelW).Render(strings.Join(leftLines, "\n"))
+	}
+	rightLines := []string{stylePanelTitle.Render(" DEST "), ""}
+	for i, h := range hosts {
+		line := "  " + h.Name + "  " + styleDim.Render(fmt.Sprintf("%s@%s", h.User, h.Hostname))
+		if i == m.transferDestHostIdx {
+			line = "▸ " + styleListItemSelected.Render(line)
+		} else {
+			line = "  " + styleListItem.Render(line)
+		}
+		rightLines = append(rightLines, line)
+	}
+	rightLines = append(rightLines, "", styleInputLabel.Render("Path:"), m.transferDestPathInput.View())
+	rightPanel := stylePanel.Width(panelW).Render(strings.Join(rightLines, "\n"))
+	if m.transferHostHostFocus == 2 || m.transferHostHostFocus == 3 {
+		rightPanel = stylePanelActive.Width(panelW).Render(strings.Join(rightLines, "\n"))
+	}
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", rightPanel)
+	status := styleStatusBar.Render(
+		keyHint("m", "Local↔Host") + "  " +
+			keyHint("Tab", "focus") + "  " +
+			keyHint("↑↓", "host") + "  " +
+			keyHint("⏎", "run") + "  " +
+			keyHint("esc", "back"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", panels, "", status)
 }
 
 // viewTabContent returns the main area content when in tab view (Hosts or current SSH tab). No tab bar.

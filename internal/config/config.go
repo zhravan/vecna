@@ -80,9 +80,19 @@ func Init(cfgFile string) {
 	applyDefaultCommandsIfEmpty()
 }
 
-// applyDefaultCommandsIfEmpty fills C.Commands from embedded default when none are set, and persists.
+// isOldDefaultCommands returns true if the current commands are exactly the old 2-item default.
+func isOldDefaultCommands() bool {
+	if len(C.Commands) != 2 {
+		return false
+	}
+	labels := []string{C.Commands[0].Label, C.Commands[1].Label}
+	old := map[string]bool{"disk usage": true, "memory": true}
+	return old[labels[0]] && old[labels[1]]
+}
+
+// applyDefaultCommandsIfEmpty fills C.Commands from embedded default when none are set (or old 2-item default), and persists.
 func applyDefaultCommandsIfEmpty() {
-	if len(C.Commands) > 0 {
+	if len(C.Commands) > 0 && !isOldDefaultCommands() {
 		return
 	}
 	v := viper.New()

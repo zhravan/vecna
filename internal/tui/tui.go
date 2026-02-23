@@ -3,6 +3,9 @@ package tui
 import (
 	"fmt"
 	"io"
+	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/shravan20/vecna/internal/config"
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
+	sshcrypto "golang.org/x/crypto/ssh"
 )
 
 type View int
@@ -81,19 +85,45 @@ type Model struct {
 	homeFocus  int // 0 = list, 1 = filter input
 
 	// Run command view
-	runCommandCursor     int
-	runCommandOutput     string
-	runCommandRunning    bool
-	runCommandHosts      []config.Host // hosts to run on (1 = current only, 2+ = multi)
+	runCommandCursor       int
+	runCommandOutput       string
+	runCommandRunning      bool
+	runCommandHosts        []config.Host // hosts to run on (1 = current only, 2+ = multi)
 	runCommandMultiResults []runCommandHostResult
+	runCommandFilter       textinput.Model
+	runCommandFocus        int // 0 = list, 1 = filter input
 	// Multi-select on home: host name -> selected
 	selectedHostNames map[string]bool
 
-	// File transfer view
-	transferInputs  []textinput.Model
-	transferFocus   int
+	// File transfer view (browser)
 	transferOutput  string
 	transferRunning bool
+	// Browser: left = local, right = remote
+	transferFocusPanel   int   // 0 = local, 1 = remote
+	transferLocalCwd     string
+	transferRemoteCwd   string
+	transferLocalEntries []transferFileEntry
+	transferRemoteEntries []transferFileEntry
+	transferLocalCursor   int
+	transferRemoteCursor  int
+	transferLocalOffset   int // scroll: first visible index
+	transferRemoteOffset  int
+	transferLocalFilter   string // filter current folder by name
+	transferRemoteFilter  string
+	transferFilterFocused bool
+	transferFilterInput  textinput.Model
+	transferSelectedLocal  map[string]bool
+	transferSelectedRemote map[string]bool
+	transferRemoteLoading  bool
+	transferInputs         []textinput.Model
+	transferFocus          int
+	// Host→Host mode: 0 = Local↔Host (browser), 1 = Host→Host
+	transferMode            int
+	transferSourceHostIdx   int
+	transferDestHostIdx     int
+	transferSourcePathInput textinput.Model
+	transferDestPathInput   textinput.Model
+	transferHostHostFocus   int // 0=source list, 1=source path, 2=dest list, 3=dest path
 
 	// Last SSH connection time per host name (for details panel)
 	lastSSHAt map[string]time.Time
@@ -114,6 +144,33 @@ type activeForward struct {
 type hostEntry struct {
 	Host  config.Host
 	Index int
+}
+
+// commandEntry pairs a command with its index in config (for running after filtering).
+type commandEntry struct {
+	Index   int
+	Command config.Command
+}
+
+// filteredCommandEntries returns commands matching the filter query (label or command text, case-insensitive).
+func (m Model) filteredCommandEntries() []commandEntry {
+	commands := config.GetCommands()
+	query := strings.TrimSpace(m.runCommandFilter.Value())
+	if query == "" {
+		out := make([]commandEntry, len(commands))
+		for i, c := range commands {
+			out[i] = commandEntry{Index: i, Command: c}
+		}
+		return out
+	}
+	q := strings.ToLower(query)
+	var out []commandEntry
+	for i, c := range commands {
+		if strings.Contains(strings.ToLower(c.Label), q) || strings.Contains(strings.ToLower(c.Command), q) {
+			out = append(out, commandEntry{Index: i, Command: c})
+		}
+	}
+	return out
 }
 
 // filteredHostEntries returns hosts matching the filter query (name or tag, case-insensitive).
@@ -148,18 +205,24 @@ func New() Model {
 	f.Placeholder = "Filter by name or tag..."
 	f.CharLimit = 80
 	f.Width = 30
+	runCmdF := textinput.New()
+	runCmdF.Placeholder = "Filter by label or command..."
+	runCmdF.CharLimit = 80
+	runCmdF.Width = 40
 	return Model{
-		view:             ViewHome,
-		keys:             DefaultKeyMap(),
-		hosts:            config.GetHosts(),
-		hostFilter:       f,
-		homeFocus:        0,
+		view:                  ViewHome,
+		keys:                  DefaultKeyMap(),
+		hosts:                 config.GetHosts(),
+		hostFilter:            f,
+		homeFocus:             0,
+		runCommandFilter:      runCmdF,
+		runCommandFocus:       0,
 		selectedHostNames:     make(map[string]bool),
 		lastSSHAt:             make(map[string]time.Time),
-		activeSSHCountByHost: make(map[string]int),
+		activeSSHCountByHost:  make(map[string]int),
 		tabs:                  []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
-		currentTabIndex:  0,
-		nextTabId:        1,
+		currentTabIndex:       0,
+		nextTabId:             1,
 	}
 }
 
@@ -459,6 +522,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeSSHCountByHost[msg.HostName] = msg.Count
 		return m, nil
 
+	case listLocalResultMsg:
+		m.transferLocalCwd = msg.Path
+		m.transferLocalEntries = msg.Entries
+		if msg.Err != nil {
+			m.transferLocalEntries = nil
+		}
+		m.transferLocalCursor = 0
+		m.transferLocalOffset = 0
+		return m, nil
+
+	case listRemoteResultMsg:
+		m.transferRemoteCwd = msg.Path
+		m.transferRemoteEntries = msg.Entries
+		m.transferRemoteLoading = false
+		if msg.Err != nil {
+			m.transferRemoteEntries = nil
+		}
+		m.transferRemoteCursor = 0
+		m.transferRemoteOffset = 0
+		return m, nil
+
 	case transferResultMsg:
 		m.transferRunning = false
 		if msg.err != nil {
@@ -654,6 +738,8 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.runCommandCursor = 0
 			m.runCommandOutput = ""
 			m.runCommandMultiResults = nil
+			m.runCommandFilter.SetValue("")
+			m.runCommandFocus = 0
 			// Build list of hosts to run on: 2+ selected → run on selected; else current only
 			var runHosts []config.Host
 			for _, e := range entries {
@@ -673,9 +759,33 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h := entries[m.cursor].Host
 			m.sshHost = &h
 			m.view = ViewFileTransfer
-			m.initTransferInputs()
 			m.transferOutput = ""
-			return m, m.transferInputs[0].Focus()
+			m.transferFocusPanel = 0
+			m.transferLocalEntries = nil
+			m.transferRemoteEntries = nil
+			m.transferRemoteLoading = true
+			m.transferSelectedLocal = make(map[string]bool)
+			m.transferSelectedRemote = make(map[string]bool)
+			m.transferLocalOffset = 0
+			m.transferRemoteOffset = 0
+			m.transferLocalFilter = ""
+			m.transferRemoteFilter = ""
+			m.transferFilterFocused = false
+			f := textinput.New()
+			f.Placeholder = "Filter by name..."
+			f.CharLimit = 80
+			f.Width = 30
+			m.transferFilterInput = f
+			home, _ := os.UserHomeDir()
+			if home == "" {
+				home = "/"
+			}
+			m.transferLocalCwd = home
+			m.transferRemoteCwd = "/"
+			m.transferLocalCursor = 0
+			m.transferRemoteCursor = 0
+			m.transferMode = 0
+			return m, tea.Batch(listLocalCmd(home), listRemoteCmd(h, "/"))
 		}
 
 	case key.Matches(msg, m.keys.SFTP):
@@ -866,7 +976,7 @@ func (m Model) updatePortForward(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateRunCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	commands := config.GetCommands()
+	entries := m.filteredCommandEntries()
 
 	if m.runCommandOutput != "" || len(m.runCommandMultiResults) > 0 {
 		// Showing output: any key (e.g. esc) goes back to list
@@ -880,6 +990,11 @@ func (m Model) updateRunCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Back) {
+		if m.runCommandFocus == 1 {
+			m.runCommandFilter.Blur()
+			m.runCommandFocus = 0
+			return m, nil
+		}
 		m.view = ViewHome
 		m.sshHost = nil
 		return m, nil
@@ -889,20 +1004,47 @@ func (m Model) updateRunCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Filter bar focused
+	if m.runCommandFocus == 1 {
+		switch msg.String() {
+		case "esc":
+			m.runCommandFilter.Blur()
+			m.runCommandFocus = 0
+			return m, nil
+		case "down", "enter", "tab":
+			m.runCommandFilter.Blur()
+			m.runCommandFocus = 0
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.runCommandFilter, cmd = m.runCommandFilter.Update(msg)
+		if m.runCommandCursor >= len(entries) && len(entries) > 0 {
+			m.runCommandCursor = len(entries) - 1
+		}
+		if len(entries) == 0 {
+			m.runCommandCursor = 0
+		}
+		return m, cmd
+	}
+
+	// List focused
 	switch {
+	case msg.String() == "/":
+		m.runCommandFocus = 1
+		return m, m.runCommandFilter.Focus()
 	case key.Matches(msg, m.keys.Up):
 		if m.runCommandCursor > 0 {
 			m.runCommandCursor--
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Down):
-		if m.runCommandCursor < len(commands)-1 {
+		if m.runCommandCursor < len(entries)-1 {
 			m.runCommandCursor++
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.Enter):
-		if len(commands) > 0 && m.runCommandCursor < len(commands) && (m.sshHost != nil || len(m.runCommandHosts) > 0) {
-			cmd := commands[m.runCommandCursor]
+		if len(entries) > 0 && m.runCommandCursor < len(entries) && (m.sshHost != nil || len(m.runCommandHosts) > 0) {
+			cmd := entries[m.runCommandCursor].Command
 			m.runCommandRunning = true
 			m.runCommandOutput = ""
 			m.runCommandMultiResults = nil
@@ -945,40 +1087,355 @@ func (m Model) updateFileTransfer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "tab", "down", "enter":
-		if m.transferFocus < 2 {
-			m.transferInputs[m.transferFocus].Blur()
-			m.transferFocus++
-			return m, m.transferInputs[m.transferFocus].Focus()
-		}
-		// Last field: run transfer
-		dir := strings.TrimSpace(strings.ToLower(m.transferInputs[0].Value()))
-		local := strings.TrimSpace(m.transferInputs[1].Value())
-		remote := strings.TrimSpace(m.transferInputs[2].Value())
-		if (dir == "push" || dir == "pull") && local != "" && remote != "" && m.sshHost != nil {
-			m.transferRunning = true
-			conn := sftp.HostConnection{
-				User:         m.sshHost.User,
-				Hostname:     m.sshHost.Hostname,
-				Port:         m.sshHost.Port,
-				IdentityFile: m.sshHost.IdentityFile,
-			}
-			return m, func() tea.Msg {
-				return transferCmd(conn, dir, local, remote)
-			}
-		}
-	case "shift+tab", "up":
-		if m.transferFocus > 0 {
-			m.transferInputs[m.transferFocus].Blur()
-			m.transferFocus--
-			return m, m.transferInputs[m.transferFocus].Focus()
-		}
+	// Host→Host mode: different UI and key handling
+	if m.transferMode == 1 {
+		return m.updateFileTransferHostToHost(msg)
 	}
 
-	var cmd tea.Cmd
-	m.transferInputs[m.transferFocus], cmd = m.transferInputs[m.transferFocus].Update(msg)
-	return m, cmd
+	if m.sshHost == nil {
+		return m, nil
+	}
+
+	visibleRows := m.height - 8
+	if visibleRows < 3 {
+		visibleRows = 3
+	}
+
+	conn := sftp.HostConnection{
+		User:         m.sshHost.User,
+		Hostname:     m.sshHost.Hostname,
+		Port:         m.sshHost.Port,
+		IdentityFile: m.sshHost.IdentityFile,
+	}
+	host := *m.sshHost
+
+	// Filter mode: typing in search box
+	if m.transferFilterFocused {
+		switch msg.String() {
+		case "esc":
+			m.transferFilterFocused = false
+			m.transferFilterInput.Blur()
+			if m.transferFocusPanel == 0 {
+				m.transferLocalFilter = ""
+			} else {
+				m.transferRemoteFilter = ""
+			}
+			return m, nil
+		case "enter":
+			m.transferFilterFocused = false
+			m.transferFilterInput.Blur()
+			q := strings.TrimSpace(m.transferFilterInput.Value())
+			if m.transferFocusPanel == 0 {
+				m.transferLocalFilter = q
+				vis := filterTransferEntries(m.transferLocalEntries, q)
+				if m.transferLocalCursor >= len(vis) {
+					m.transferLocalCursor = len(vis) - 1
+				}
+				if m.transferLocalCursor < 0 {
+					m.transferLocalCursor = 0
+				}
+				m.transferLocalOffset = 0
+			} else {
+				m.transferRemoteFilter = q
+				vis := filterTransferEntries(m.transferRemoteEntries, q)
+				if m.transferRemoteCursor >= len(vis) {
+					m.transferRemoteCursor = len(vis) - 1
+				}
+				if m.transferRemoteCursor < 0 {
+					m.transferRemoteCursor = 0
+				}
+				m.transferRemoteOffset = 0
+			}
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.transferFilterInput, cmd = m.transferFilterInput.Update(msg)
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "m":
+		// Switch to Host→Host mode
+		m.transferMode = 1
+		hosts := config.GetHosts()
+		m.transferSourceHostIdx = 0
+		m.transferDestHostIdx = 0
+		if len(hosts) > 1 {
+			m.transferDestHostIdx = 1
+		}
+		if m.sshHost != nil {
+			for i, h := range hosts {
+				if h.Name == m.sshHost.Name {
+					m.transferSourceHostIdx = i
+					if len(hosts) > 1 && i == 0 {
+						m.transferDestHostIdx = 1
+					} else if len(hosts) > 1 {
+						m.transferDestHostIdx = 0
+					}
+					break
+				}
+			}
+		}
+		sp := textinput.New()
+		sp.Placeholder = "/path/on/source"
+		sp.CharLimit = 256
+		sp.Width = 40
+		dp := textinput.New()
+		dp.Placeholder = "/path/on/dest"
+		dp.CharLimit = 256
+		dp.Width = 40
+		m.transferSourcePathInput = sp
+		m.transferDestPathInput = dp
+		m.transferHostHostFocus = 0
+		return m, nil
+	case "/":
+		m.transferFilterFocused = true
+		if m.transferFocusPanel == 0 {
+			m.transferFilterInput.SetValue(m.transferLocalFilter)
+		} else {
+			m.transferFilterInput.SetValue(m.transferRemoteFilter)
+		}
+		return m, m.transferFilterInput.Focus()
+	case "tab":
+		m.transferFocusPanel = 1 - m.transferFocusPanel
+		return m, nil
+	case "up", "k":
+		if m.transferFocusPanel == 0 {
+			if m.transferLocalCursor > 0 {
+				m.transferLocalCursor--
+			}
+			if m.transferLocalCursor < m.transferLocalOffset {
+				m.transferLocalOffset = m.transferLocalCursor
+			}
+		} else {
+			if m.transferRemoteCursor > 0 {
+				m.transferRemoteCursor--
+			}
+			if m.transferRemoteCursor < m.transferRemoteOffset {
+				m.transferRemoteOffset = m.transferRemoteCursor
+			}
+		}
+		return m, nil
+	case "down", "j":
+		if m.transferFocusPanel == 0 {
+			vis := filterTransferEntries(m.transferLocalEntries, m.transferLocalFilter)
+			if m.transferLocalCursor < len(vis)-1 {
+				m.transferLocalCursor++
+			}
+			if m.transferLocalCursor >= m.transferLocalOffset+visibleRows {
+				m.transferLocalOffset = m.transferLocalCursor - visibleRows + 1
+			}
+		} else {
+			vis := filterTransferEntries(m.transferRemoteEntries, m.transferRemoteFilter)
+			if m.transferRemoteCursor < len(vis)-1 {
+				m.transferRemoteCursor++
+			}
+			if m.transferRemoteCursor >= m.transferRemoteOffset+visibleRows {
+				m.transferRemoteOffset = m.transferRemoteCursor - visibleRows + 1
+			}
+		}
+		return m, nil
+	case " ":
+		visLocal := filterTransferEntries(m.transferLocalEntries, m.transferLocalFilter)
+		visRemote := filterTransferEntries(m.transferRemoteEntries, m.transferRemoteFilter)
+		if m.transferFocusPanel == 0 && m.transferLocalCursor < len(visLocal) {
+			e := visLocal[m.transferLocalCursor]
+			full := filepath.Join(m.transferLocalCwd, e.Name)
+			if m.transferSelectedLocal[full] {
+				delete(m.transferSelectedLocal, full)
+			} else {
+				m.transferSelectedLocal[full] = true
+			}
+		} else if m.transferFocusPanel == 1 && m.transferRemoteCursor < len(visRemote) {
+			e := visRemote[m.transferRemoteCursor]
+			full := path.Join(m.transferRemoteCwd, e.Name)
+			if m.transferSelectedRemote[full] {
+				delete(m.transferSelectedRemote, full)
+			} else {
+				m.transferSelectedRemote[full] = true
+			}
+		}
+		return m, nil
+	case "enter":
+		visLocal := filterTransferEntries(m.transferLocalEntries, m.transferLocalFilter)
+		visRemote := filterTransferEntries(m.transferRemoteEntries, m.transferRemoteFilter)
+		if m.transferFocusPanel == 0 {
+			if m.transferLocalCursor >= len(visLocal) {
+				return m, nil
+			}
+			e := visLocal[m.transferLocalCursor]
+			if e.IsDir {
+				newPath := filepath.Join(m.transferLocalCwd, e.Name)
+				m.transferLocalOffset = 0
+				return m, listLocalCmd(newPath)
+			}
+			paths := make([]string, 0, len(m.transferSelectedLocal)+1)
+			for p := range m.transferSelectedLocal {
+				paths = append(paths, p)
+			}
+			full := filepath.Join(m.transferLocalCwd, e.Name)
+			if len(paths) == 0 {
+				paths = []string{full}
+			} else if !m.transferSelectedLocal[full] {
+				paths = append(paths, full)
+			}
+			if len(paths) > 0 {
+				m.transferRunning = true
+				return m, transferCmdMulti(conn, "push", paths, m.transferRemoteCwd)
+			}
+		} else {
+			if m.transferRemoteCursor >= len(visRemote) {
+				return m, nil
+			}
+			e := visRemote[m.transferRemoteCursor]
+			if e.IsDir {
+				newPath := path.Join(m.transferRemoteCwd, e.Name)
+				if newPath == "" {
+					newPath = "/"
+				}
+				m.transferRemoteLoading = true
+				m.transferRemoteOffset = 0
+				return m, listRemoteCmd(host, newPath)
+			}
+			paths := make([]string, 0, len(m.transferSelectedRemote)+1)
+			for p := range m.transferSelectedRemote {
+				paths = append(paths, p)
+			}
+			full := path.Join(m.transferRemoteCwd, e.Name)
+			if len(paths) == 0 {
+				paths = []string{full}
+			} else if !m.transferSelectedRemote[full] {
+				paths = append(paths, full)
+			}
+			if len(paths) > 0 {
+				m.transferRunning = true
+				return m, transferCmdMulti(conn, "pull", paths, m.transferLocalCwd)
+			}
+		}
+		return m, nil
+	case "backspace":
+		if m.transferFocusPanel == 0 && m.transferLocalCwd != "" {
+			parent := filepath.Dir(m.transferLocalCwd)
+			if parent == m.transferLocalCwd {
+				parent = filepath.VolumeName(m.transferLocalCwd) + string(filepath.Separator)
+			}
+			return m, listLocalCmd(parent)
+		} else if m.transferFocusPanel == 1 && m.transferRemoteCwd != "" && m.transferRemoteCwd != "/" {
+			parent := filepath.Dir(m.transferRemoteCwd)
+			if parent == "" || parent == "." {
+				parent = "/"
+			}
+			m.transferRemoteLoading = true
+			return m, listRemoteCmd(host, parent)
+		}
+		return m, nil
+	case "~":
+		// Go to local home (when focus is local)
+		if m.transferFocusPanel == 0 {
+			home, _ := os.UserHomeDir()
+			if home == "" {
+				home = "/"
+			}
+			m.transferLocalOffset = 0
+			return m, listLocalCmd(home)
+		}
+		return m, nil
+	case "\\", "ctrl+\\":
+		// Go to remote root (when focus is remote)
+		if m.transferFocusPanel == 1 {
+			m.transferRemoteCwd = "/"
+			m.transferRemoteLoading = true
+			m.transferRemoteOffset = 0
+			return m, listRemoteCmd(host, "/")
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m Model) updateFileTransferHostToHost(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.transferMode = 0
+		return m, nil
+	}
+	hosts := config.GetHosts()
+	switch msg.String() {
+	case "tab":
+		m.transferHostHostFocus = (m.transferHostHostFocus + 1) % 4
+		if m.transferHostHostFocus == 1 {
+			return m, m.transferSourcePathInput.Focus()
+		}
+		if m.transferHostHostFocus == 3 {
+			return m, m.transferDestPathInput.Focus()
+		}
+		m.transferSourcePathInput.Blur()
+		m.transferDestPathInput.Blur()
+		return m, nil
+	case "up", "k":
+		if m.transferHostHostFocus == 0 && m.transferSourceHostIdx > 0 {
+			m.transferSourceHostIdx--
+		} else if m.transferHostHostFocus == 2 && m.transferDestHostIdx > 0 {
+			m.transferDestHostIdx--
+		}
+		return m, nil
+	case "down", "j":
+		if m.transferHostHostFocus == 0 && m.transferSourceHostIdx < len(hosts)-1 {
+			m.transferSourceHostIdx++
+		} else if m.transferHostHostFocus == 2 && m.transferDestHostIdx < len(hosts)-1 {
+			m.transferDestHostIdx++
+		}
+		return m, nil
+	case "enter":
+		srcPath := strings.TrimSpace(m.transferSourcePathInput.Value())
+		destPath := strings.TrimSpace(m.transferDestPathInput.Value())
+		if len(hosts) == 0 || m.transferSourceHostIdx >= len(hosts) || m.transferDestHostIdx >= len(hosts) || srcPath == "" || destPath == "" {
+			return m, nil
+		}
+		srcHost := hosts[m.transferSourceHostIdx]
+		destHost := hosts[m.transferDestHostIdx]
+		if srcHost.Name == destHost.Name && srcPath == destPath {
+			return m, nil
+		}
+		m.transferRunning = true
+		return m, transferHostToHostCmd(srcHost, destHost, srcPath, destPath)
+	}
+	if m.transferHostHostFocus == 1 {
+		var cmd tea.Cmd
+		m.transferSourcePathInput, cmd = m.transferSourcePathInput.Update(msg)
+		return m, cmd
+	}
+	if m.transferHostHostFocus == 3 {
+		var cmd tea.Cmd
+		m.transferDestPathInput, cmd = m.transferDestPathInput.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func transferHostToHostCmd(srcHost, destHost config.Host, srcPath, destPath string) tea.Cmd {
+	return func() tea.Msg {
+		srcConn := sftp.HostConnection{
+			User:         srcHost.User,
+			Hostname:     srcHost.Hostname,
+			Port:         srcHost.Port,
+			IdentityFile: srcHost.IdentityFile,
+		}
+		destConn := sftp.HostConnection{
+			User:         destHost.User,
+			Hostname:     destHost.Hostname,
+			Port:         destHost.Port,
+			IdentityFile: destHost.IdentityFile,
+		}
+		out, err := sftp.RunSCPHostToHost(srcConn, srcPath, destConn, destPath)
+		if err != nil {
+			return transferResultMsg{output: out + "\n" + err.Error(), err: err}
+		}
+		if out == "" {
+			out = "Done."
+		}
+		return transferResultMsg{output: out, err: nil}
+	}
 }
 
 func (m *Model) saveHost() {
@@ -1224,6 +1681,39 @@ type transferResultMsg struct {
 	err    error
 }
 
+type transferFileEntry struct {
+	Name  string
+	IsDir bool
+	Size  int64
+}
+
+type listLocalResultMsg struct {
+	Path    string
+	Entries []transferFileEntry
+	Err     error
+}
+
+type listRemoteResultMsg struct {
+	Path    string
+	Entries []transferFileEntry
+	Err     error
+}
+
+// filterTransferEntries returns entries whose Name contains query (case-insensitive). Empty query returns all.
+func filterTransferEntries(entries []transferFileEntry, query string) []transferFileEntry {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return entries
+	}
+	out := make([]transferFileEntry, 0, len(entries))
+	for _, e := range entries {
+		if strings.Contains(strings.ToLower(e.Name), query) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 type activeSSHCountResultMsg struct {
 	HostName string
 	Count    int // -1 on error
@@ -1326,6 +1816,122 @@ func transferCmd(conn sftp.HostConnection, direction, localPath, remotePath stri
 	return transferResultMsg{output: out, err: err}
 }
 
+func transferCmdMulti(conn sftp.HostConnection, direction string, paths []string, destDir string) tea.Cmd {
+	return func() tea.Msg {
+		var out strings.Builder
+		var lastErr error
+		for _, p := range paths {
+			base := filepath.Base(p)
+			destPath := filepath.Join(destDir, base)
+			if direction == "push" {
+				o, err := sftp.RunSCP(conn, "push", p, destPath)
+				if err != nil {
+					lastErr = err
+					out.WriteString(fmt.Sprintf("%s → %s: %v\n", p, destPath, err))
+				} else {
+					out.WriteString(fmt.Sprintf("%s → %s: ok\n", p, destPath))
+					if o != "" {
+						out.WriteString(o)
+						out.WriteString("\n")
+					}
+				}
+			} else {
+				o, err := sftp.RunSCP(conn, "pull", p, destPath)
+				if err != nil {
+					lastErr = err
+					out.WriteString(fmt.Sprintf("%s → %s: %v\n", p, destPath, err))
+				} else {
+					out.WriteString(fmt.Sprintf("%s → %s: ok\n", p, destPath))
+					if o != "" {
+						out.WriteString(o)
+						out.WriteString("\n")
+					}
+				}
+			}
+		}
+		output := strings.TrimSpace(out.String())
+		if output == "" {
+			output = "Done."
+		}
+		return transferResultMsg{output: output, err: lastErr}
+	}
+}
+
+func listLocalCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		entries, err := os.ReadDir(path)
+		out := make([]transferFileEntry, 0, len(entries))
+		if err != nil {
+			return listLocalResultMsg{Path: path, Err: err}
+		}
+		for _, e := range entries {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			out = append(out, transferFileEntry{Name: e.Name(), IsDir: e.IsDir(), Size: info.Size()})
+		}
+		return listLocalResultMsg{Path: path, Entries: out}
+	}
+}
+
+func listRemoteCmd(host config.Host, remotePath string) tea.Cmd {
+	return func() tea.Msg {
+		sshHost := ssh.Host{
+			Name:         host.Name,
+			Hostname:     host.Hostname,
+			User:         host.User,
+			Port:         host.Port,
+			IdentityFile: host.IdentityFile,
+		}
+		password := ""
+		if host.Password != "" {
+			dec, err := config.DecryptPassword(host.Password)
+			if err != nil {
+				return listRemoteResultMsg{Path: remotePath, Err: err}
+			}
+			password = dec
+		}
+		skipKey := !host.KeyDeployed && host.IdentityFile != ""
+		var client *sshcrypto.Client
+		var err error
+		if host.ProxyJump != "" {
+			jumpConfig, _, ok := config.GetHostByName(host.ProxyJump)
+			if !ok {
+				return listRemoteResultMsg{Path: remotePath, Err: fmt.Errorf("proxy jump host not found: %s", host.ProxyJump)}
+			}
+			jumpHost := ssh.Host{
+				Name:         jumpConfig.Name,
+				Hostname:     jumpConfig.Hostname,
+				User:         jumpConfig.User,
+				Port:         jumpConfig.Port,
+				IdentityFile: jumpConfig.IdentityFile,
+			}
+			jumpPassword := ""
+			if jumpConfig.Password != "" {
+				dec, _ := config.DecryptPassword(jumpConfig.Password)
+				jumpPassword = dec
+			}
+			jumpSkipKey := !jumpConfig.KeyDeployed && jumpConfig.IdentityFile != ""
+			client, err = ssh.DialClientViaProxy(sshHost, password, skipKey, jumpHost, jumpPassword, jumpSkipKey)
+		} else {
+			client, err = ssh.DialClient(sshHost, password, skipKey)
+		}
+		if err != nil {
+			return listRemoteResultMsg{Path: remotePath, Err: err}
+		}
+		defer client.Close()
+		infos, err := sftp.ListRemote(client, remotePath)
+		if err != nil {
+			return listRemoteResultMsg{Path: remotePath, Err: err}
+		}
+		out := make([]transferFileEntry, 0, len(infos))
+		for _, i := range infos {
+			out = append(out, transferFileEntry{Name: i.Name(), IsDir: i.IsDir(), Size: i.Size()})
+		}
+		return listRemoteResultMsg{Path: remotePath, Entries: out}
+	}
+}
 
 func (m Model) connectSSH(host config.Host) tea.Cmd {
 	return func() tea.Msg {

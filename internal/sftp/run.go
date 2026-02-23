@@ -30,6 +30,25 @@ func RunSCP(h HostConnection, direction string, localPath, remotePath string) (o
 	return string(out), err
 }
 
+// RunSCPHostToHost copies from source host to dest host (stream goes through local machine).
+// Both source and dest are remote paths: user@host:path.
+func RunSCPHostToHost(source HostConnection, sourcePath string, dest HostConnection, destPath string) (output string, err error) {
+	srcPort := source.Port
+	if srcPort == 0 {
+		srcPort = 22
+	}
+	args := []string{"-P", fmt.Sprintf("%d", srcPort)}
+	if source.IdentityFile != "" {
+		args = append(args, "-i", expandPath(source.IdentityFile))
+	}
+	src := fmt.Sprintf("%s@%s:%s", source.User, source.Hostname, sourcePath)
+	destStr := fmt.Sprintf("%s@%s:%s", dest.User, dest.Hostname, destPath)
+	args = append(args, src, destStr)
+	cmd := exec.Command("scp", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // HostConnection holds the connection details for building an sftp command.
 type HostConnection struct {
 	User         string

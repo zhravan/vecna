@@ -1,8 +1,49 @@
 # Default config used when ~/.config/vecna/config.yaml does not exist.
 hosts: []
 
+# Short, search-friendly labels: type / then filter by "df", "net", "log", "git", "docker", etc.
 commands:
-  - label: disk usage
+  - label: df
     command: df -h
-  - label: memory
+  - label: du
+    command: du -sh .
+  - label: mem
     command: free -m
+  - label: ps
+    command: ps aux
+  - label: top
+    command: top -b -n 1 2>/dev/null || top -l 1
+  - label: uptime
+    command: uptime
+  - label: net
+    command: netstat -tuln 2>/dev/null || ss -tuln
+  - label: who
+    command: w
+  - label: uname
+    command: uname -a
+  - label: ls
+    command: ls -la
+  - label: pwd
+    command: pwd
+  - label: env
+    command: env | sort
+  - label: log tail
+    command: tail -n 50 /var/log/syslog 2>/dev/null || tail -n 50 /var/log/messages 2>/dev/null || echo "no syslog"
+  - label: log last
+    command: last -n 20
+  - label: git status
+    command: git status
+  - label: git log
+    command: git log -5 --oneline
+  - label: docker ps
+    command: docker ps
+  - label: docker stats
+    command: docker stats --no-stream 2>/dev/null || echo "docker not running"
+  - label: ping
+    command: ping -c 3 8.8.8.8
+  - label: curl local
+    command: curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:80/ 2>/dev/null || echo "fail"
+  - label: disk io
+    command: iostat -x 1 2 2>/dev/null || (vmstat 1 2 2>/dev/null || echo "iostat/vmstat not available")
+  - label: load
+    command: cat /proc/loadavg 2>/dev/null || uptime
