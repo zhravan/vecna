@@ -236,7 +236,7 @@ func New() Model {
 }
 
 func (m *Model) initAddHostInputs() {
-	m.inputs = make([]textinput.Model, 7)
+	m.inputs = make([]textinput.Model, 8)
 
 	for i := range m.inputs {
 		m.inputs[i] = textinput.New()
@@ -256,7 +256,8 @@ func (m *Model) initAddHostInputs() {
 	m.inputs[3].CharLimit = 5
 	m.inputs[4].Placeholder = "password (for first-time key setup, optional)"
 	m.inputs[5].Placeholder = "y/n (auto-generate SSH key?)"
-	m.inputs[6].Placeholder = "optional: name of jump/bastion host"
+	m.inputs[6].Placeholder = "e.g. ~/.ssh/id_rsa (required if no password)"
+	m.inputs[7].Placeholder = "optional: name of jump/bastion host"
 
 	m.inputs[0].Focus()
 	m.inputFocus = 0
@@ -278,7 +279,8 @@ func (m *Model) initEditHostInputs(h config.Host, configIndex int) {
 	if h.AutoGenerateKey {
 		m.inputs[5].SetValue("y")
 	}
-	m.inputs[6].SetValue(h.ProxyJump)
+	m.inputs[6].SetValue(h.IdentityFile)
+	m.inputs[7].SetValue(h.ProxyJump)
 	m.editingHostIndex = configIndex
 }
 
@@ -1668,12 +1670,12 @@ func (m *Model) saveHost() {
 			Hostname:        hostname,
 			User:            user,
 			Port:            port,
-			IdentityFile:    cur.IdentityFile,
+			IdentityFile:    strings.TrimSpace(m.inputs[6].Value()),
 			Password:        cur.Password,
 			KeyDeployed:     cur.KeyDeployed,
 			AutoGenerateKey: cur.AutoGenerateKey,
 			Tags:            cur.Tags,
-			ProxyJump:       strings.TrimSpace(m.inputs[6].Value()),
+			ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
 		}
 		if newPass := m.inputs[4].Value(); newPass != "" {
 			encrypted, err := config.EncryptPassword(newPass)
@@ -1700,6 +1702,7 @@ func (m *Model) saveHost() {
 	// Add new host
 	password := m.inputs[4].Value()
 	autoGenKey := strings.ToLower(m.inputs[5].Value()) == "y" || strings.ToLower(m.inputs[5].Value()) == "yes"
+	customKeyPath := strings.TrimSpace(m.inputs[6].Value())
 
 	var identityFile string
 	if autoGenKey {
@@ -1711,6 +1714,8 @@ func (m *Model) saveHost() {
 			return
 		}
 		identityFile = privatePath
+	} else if customKeyPath != "" {
+		identityFile = customKeyPath
 	}
 
 	sshHost := ssh.Host{
@@ -1719,13 +1724,6 @@ func (m *Model) saveHost() {
 		User:         user,
 		Port:         port,
 		IdentityFile: identityFile,
-	}
-
-	if password == "" && identityFile == "" {
-		m.toast = "Password or existing key required for validation"
-		m.toastSuccess = false
-		m.toastTimer = 50
-		return
 	}
 
 	m.toast = "→ Validating connection..."
@@ -1751,7 +1749,10 @@ func (m *Model) saveHost() {
 		}
 	}
 
-	keyDeployed := false
+	keyDeployed := identityFile == "" && password == ""
+	if identityFile != "" && !autoGenKey {
+		keyDeployed = true // existing key path provided
+	}
 	if autoGenKey && password != "" && identityFile != "" {
 		m.toast = "→ Deploying SSH key..."
 		m.toastSuccess = false
@@ -1779,7 +1780,7 @@ func (m *Model) saveHost() {
 		Password:        encryptedPassword,
 		KeyDeployed:     keyDeployed,
 		AutoGenerateKey: autoGenKey,
-		ProxyJump:       strings.TrimSpace(m.inputs[6].Value()),
+		ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
 	}
 
 	config.AddHost(h)

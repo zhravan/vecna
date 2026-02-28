@@ -314,7 +314,7 @@ func (m Model) viewAddHost() string {
 	}
 
 	var fields []string
-	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Proxy jump"}
+	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Identity file", "Proxy jump"}
 
 	for i, input := range m.inputs {
 		labelText := labels[i]
@@ -344,6 +344,7 @@ func (m Model) viewAddHost() string {
 		Render(form)
 
 	hint := styleDim.Render("Tab/↓: next • Shift+Tab/↑: prev • Ctrl+P: toggle password • Enter: save • Esc: cancel")
+	hint2 := styleDim.Render("Provide password and/or identity file path. No default key fallback.")
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -352,6 +353,7 @@ func (m Model) viewAddHost() string {
 		panel,
 		"",
 		hint,
+		hint2,
 	)
 
 	return m.renderWithToast(mainView)
