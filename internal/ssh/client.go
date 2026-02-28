@@ -201,7 +201,9 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 	home, _ := os.UserHomeDir()
 	expandPath := func(p string) string {
 		if strings.HasPrefix(p, "~") {
-			return filepath.Join(home, p[1:])
+			// Trim leading slash/backslash so filepath.Join works on Windows (e.g. ~/.ssh -> home/.ssh)
+			rest := strings.TrimLeft(p[1:], `/\`)
+			return filepath.Join(home, rest)
 		}
 		return p
 	}

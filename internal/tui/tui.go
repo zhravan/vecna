@@ -778,7 +778,7 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.transferFilterInput = f
 			home, _ := os.UserHomeDir()
 			if home == "" {
-				home = "/"
+				home = "."
 			}
 			m.transferLocalCwd = home
 			m.transferRemoteCwd = "/"
@@ -1329,12 +1329,12 @@ func (m Model) updateFileTransfer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, listRemoteCmd(host, parent)
 		}
 		return m, nil
-	case "~":
+		case "~":
 		// Go to local home (when focus is local)
 		if m.transferFocusPanel == 0 {
 			home, _ := os.UserHomeDir()
 			if home == "" {
-				home = "/"
+				home = "."
 			}
 			m.transferLocalOffset = 0
 			return m, listLocalCmd(home)

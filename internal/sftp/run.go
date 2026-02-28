@@ -9,6 +9,21 @@ import (
 	"strings"
 )
 
+// scpPath returns the path to the scp binary. On Windows, if scp is not in PATH, tries OpenSSH install path.
+func scpPath() string {
+	if path, err := exec.LookPath("scp"); err == nil {
+		return path
+	}
+	if runtime.GOOS == "windows" {
+		// Windows 10+ optional OpenSSH client default location
+		const winOpenSSH = "C:\\Windows\\System32\\OpenSSH\\scp.exe"
+		if _, err := os.Stat(winOpenSSH); err == nil {
+			return winOpenSSH
+		}
+	}
+	return "scp"
+}
+
 // RunSCP runs scp for push (local → remote) or pull (remote → local). Returns combined output.
 func RunSCP(h HostConnection, direction string, localPath, remotePath string) (output string, err error) {
 	port := h.Port
@@ -25,7 +40,7 @@ func RunSCP(h HostConnection, direction string, localPath, remotePath string) (o
 	} else {
 		args = append(args, remote, localPath)
 	}
-	cmd := exec.Command("scp", args...)
+	cmd := exec.Command(scpPath(), args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -44,7 +59,7 @@ func RunSCPHostToHost(source HostConnection, sourcePath string, dest HostConnect
 	src := fmt.Sprintf("%s@%s:%s", source.User, source.Hostname, sourcePath)
 	destStr := fmt.Sprintf("%s@%s:%s", dest.User, dest.Hostname, destPath)
 	args = append(args, src, destStr)
-	cmd := exec.Command("scp", args...)
+	cmd := exec.Command(scpPath(), args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -76,13 +91,14 @@ func BuildCommand(h HostConnection) (name string, args []string) {
 func expandPath(p string) string {
 	if strings.HasPrefix(p, "~") {
 		home, _ := os.UserHomeDir()
-		return filepath.Join(home, p[1:])
+		rest := strings.TrimLeft(p[1:], `/\`)
+		return filepath.Join(home, rest)
 	}
 	return p
 }
 
 // RunInNewTerminal runs the sftp command in a new terminal window so the user can interact with it.
-// On macOS uses Terminal.app via osascript; on Linux tries gnome-terminal or xterm.
+// On macOS uses Terminal.app via osascript; on Linux tries gnome-terminal or xterm; on Windows uses cmd start.
 // Returns the command string and any error (e.g. if no terminal could be launched).
 func RunInNewTerminal(h HostConnection) (cmdStr string, err error) {
 	name, args := BuildCommand(h)
@@ -111,6 +127,15 @@ func RunInNewTerminal(h HostConnection) (cmdStr string, err error) {
 			return cmdStr, nil
 		}
 		return cmdStr, fmt.Errorf("could not open terminal (tried gnome-terminal, xterm)")
+	case "windows":
+		// Open new console window with sftp (requires OpenSSH client, e.g. built-in on Windows 10+)
+		startArgs := append([]string{"/c", "start", "Vecna SFTP", name}, args...)
+		cmd := exec.Command("cmd", startArgs...)
+		if err := cmd.Start(); err != nil {
+			return cmdStr, err
+		}
+		go cmd.Wait()
+		return cmdStr, nil
 	default:
 		return cmdStr, fmt.Errorf("open SFTP in new terminal not supported on %s", runtime.GOOS)
 	}

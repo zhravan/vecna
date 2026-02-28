@@ -14,11 +14,18 @@
 |:---:|:---:|
 | <img src="assets/screenshot-1.png" alt="Screenshot 1" width="600"/> | <img src="assets/screenshot-2.png" alt="Screenshot 2" width="600"/> |
 
-
 ## Install
+
+**Linux / macOS:**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/shravan20/vecna/master/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/shravan20/vecna/master/scripts/install.ps1 | iex
 ```
 
 - **Go:** `go install github.com/shravan20/vecna@latest`
@@ -26,10 +33,12 @@ curl -sSL https://raw.githubusercontent.com/shravan20/vecna/master/scripts/insta
 
 ```bash
 make build
-./bin/vecna
+./bin/vecna   # or bin\vecna.exe on Windows
 ```
 
   `make install` installs the binary; config is created on first run with default run commands.
+
+**Windows:** Config lives at `%USERPROFILE%\.config\vecna\config.yaml`. File transfer and “Open SFTP in new terminal” work when the [OpenSSH client](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse) is installed (default on Windows 10/11).
 
 ## Usage
 
@@ -87,6 +96,5 @@ _**Note: So the idea is centralize control, reduce friction, make SSH-driven wor
 ## License
 
 MIT
-
 
 <samp>

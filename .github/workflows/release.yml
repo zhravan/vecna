@@ -21,6 +21,10 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -47,15 +51,22 @@ jobs:
 
       - name: Build
         run: |
-          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
-            -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
-            -o vecna .
-          tar -czvf vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz vecna
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+              -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
+              -o vecna.exe .
+            zip vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip vecna.exe
+          else
+            CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+              -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
+              -o vecna .
+            tar -czvf vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz vecna
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: vecna_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+          path: vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.goos == 'windows' && 'zip' || 'tar.gz' }}
 
   release:
     needs: build
@@ -84,7 +95,7 @@ jobs:
       - name: Collect assets
         run: |
           mkdir -p release
-          find artifacts -name '*.tar.gz' -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
           ls release/
 
       - name: Create release
@@ -94,6 +105,6 @@ jobs:
           name: v${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
           make_latest: true
-          files: release/*.tar.gz
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
