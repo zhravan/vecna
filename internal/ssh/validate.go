@@ -47,11 +47,7 @@ func ValidateConnection(host Host, password string) error {
 	}
 
 	if len(authMethods) == 0 {
-		return fmt.Errorf("no authentication method available (need password or key)")
-	}
-
-	if len(authMethods) == 0 {
-		return fmt.Errorf("no authentication method available (need password or key)")
+		return fmt.Errorf("no authentication method available (need password or key path)")
 	}
 
 	config := &ssh.ClientConfig{

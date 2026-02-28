@@ -236,25 +236,7 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 	}
 
 	if len(authMethods) == 0 {
-		keyPath := filepath.Join(home, ".ssh", "id_rsa")
-		if key, err := os.ReadFile(keyPath); err == nil {
-			if signer, err := ssh.ParsePrivateKey(key); err == nil {
-				authMethods = append(authMethods, ssh.PublicKeys(signer))
-			}
-		}
-	}
-
-	if len(authMethods) == 0 {
-		keyPath := filepath.Join(home, ".ssh", "id_ed25519")
-		if key, err := os.ReadFile(keyPath); err == nil {
-			if signer, err := ssh.ParsePrivateKey(key); err == nil {
-				authMethods = append(authMethods, ssh.PublicKeys(signer))
-			}
-		}
-	}
-
-	if len(authMethods) == 0 {
-		return nil, fmt.Errorf("no authentication method available")
+		return nil, fmt.Errorf("no authentication method available (need password or key path)")
 	}
 
 	config := &ssh.ClientConfig{
