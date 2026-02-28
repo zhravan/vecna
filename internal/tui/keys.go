@@ -21,6 +21,7 @@ type KeyMap struct {
 	Transfer     key.Binding
 	ToggleSelect key.Binding
 	Import       key.Binding
+	Version      key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -96,6 +97,10 @@ func DefaultKeyMap() KeyMap {
 		Import: key.NewBinding(
 			key.WithKeys("i"),
 			key.WithHelp("i", "import from ssh config"),
+		),
+		Version: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "version"),
 		),
 	}
 }
