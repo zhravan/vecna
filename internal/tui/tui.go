@@ -18,6 +18,7 @@ import (
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
 	"github.com/shravan20/vecna/internal/sshconfig"
+	"github.com/shravan20/vecna/internal/update"
 	sshcrypto "golang.org/x/crypto/ssh"
 )
 
@@ -31,6 +32,7 @@ const (
 	ViewRunCommand
 	ViewFileTransfer
 	ViewImportSSH
+	ViewVersion
 )
 
 type tabKind int
@@ -139,6 +141,15 @@ type Model struct {
 	// Active SSH count from server (who | wc -l); -1 = unknown/error
 	activeSSHCountByHost   map[string]int
 	fetchingActiveSSHForHost string
+
+	// Version/update
+	version          string
+	latestVersion    string
+	versionCursor    int
+	versionInput     textinput.Model
+	versionInputMode bool
+	versionUpdating  bool
+	versionErr       string
 }
 
 type activeForward struct {
@@ -407,6 +418,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateFileTransfer(msg)
 		case ViewImportSSH:
 			return m.updateImportSSH(msg)
+		case ViewVersion:
+			return m.updateVersion(msg)
 		}
 
 	case sshOutputMsg:
@@ -533,6 +546,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activeSSHCountResultMsg:
 		m.fetchingActiveSSHForHost = ""
 		m.activeSSHCountByHost[msg.HostName] = msg.Count
+		return m, nil
+
+	case latestVersionResultMsg:
+		if msg.Err != "" {
+			m.latestVersion = ""
+			m.versionErr = msg.Err
+		} else {
+			m.latestVersion = msg.Version
+			m.versionErr = ""
+		}
+		return m, nil
+
+	case updateResultMsg:
+		m.versionUpdating = false
+		if msg.Err != nil {
+			m.versionErr = msg.Err.Error()
+			m.toast = "Update failed: " + msg.Err.Error()
+			m.toastSuccess = false
+			m.toastTimer = 80
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+		}
 		return m, nil
 
 	case listLocalResultMsg:
@@ -709,6 +743,17 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.view = ViewImportSSH
 		return m, nil
+
+	case key.Matches(msg, m.keys.Version):
+		m.view = ViewVersion
+		m.versionCursor = 0
+		m.versionInputMode = false
+		m.versionErr = ""
+		m.versionInput = textinput.New()
+		m.versionInput.Placeholder = "e.g. 0.1.3"
+		m.versionInput.CharLimit = 20
+		m.versionInput.Width = 24
+		return m, fetchLatestVersionCmd()
 
 	case key.Matches(msg, m.keys.Edit):
 		if len(entries) > 0 && m.cursor < len(entries) {
@@ -980,6 +1025,67 @@ func (m Model) updateImportSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	return m, nil
+}
+
+func (m Model) updateVersion(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.view = ViewHome
+		return m, nil
+	}
+	if m.versionUpdating {
+		return m, nil
+	}
+	if m.versionInputMode {
+		switch msg.String() {
+		case "esc":
+			m.versionInputMode = false
+			m.versionInput.Blur()
+			return m, nil
+		case "enter":
+			v := strings.TrimSpace(m.versionInput.Value())
+			m.versionInputMode = false
+			m.versionInput.Blur()
+			if v == "" {
+				return m, nil
+			}
+			m.versionUpdating = true
+			m.versionErr = ""
+			return m, runUpdateCmd(v)
+		}
+		var cmd tea.Cmd
+		m.versionInput, cmd = m.versionInput.Update(msg)
+		return m, cmd
+	}
+	switch {
+	case key.Matches(msg, m.keys.Up), msg.String() == "k":
+		if m.versionCursor > 0 {
+			m.versionCursor--
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Down), msg.String() == "j":
+		if m.versionCursor < 2 {
+			m.versionCursor++
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		switch m.versionCursor {
+		case 0:
+			// Update to latest
+			m.versionUpdating = true
+			m.versionErr = ""
+			return m, runUpdateCmd("latest")
+		case 1:
+			// Switch to version: focus input
+			m.versionInputMode = true
+			m.versionInput.SetValue("")
+			return m, m.versionInput.Focus()
+		case 2:
+			// Check for latest
+			m.versionErr = ""
+			return m, fetchLatestVersionCmd()
+		}
+	}
 	return m, nil
 }
 
@@ -1818,6 +1924,8 @@ func (m Model) View() string {
 		body = m.viewFileTransfer()
 	case ViewImportSSH:
 		body = m.viewImportSSH()
+	case ViewVersion:
+		body = m.viewVersion()
 	default:
 		body = m.viewTabContent()
 	}
@@ -1913,6 +2021,35 @@ func filterTransferEntries(entries []transferFileEntry, query string) []transfer
 type activeSSHCountResultMsg struct {
 	HostName string
 	Count    int // -1 on error
+}
+
+type latestVersionResultMsg struct {
+	Version string // empty if error
+	Err    string
+}
+
+type updateResultMsg struct {
+	Err error
+}
+
+func fetchLatestVersionCmd() tea.Cmd {
+	return func() tea.Msg {
+		v, err := update.FetchLatestVersion()
+		if err != nil {
+			return latestVersionResultMsg{Err: err.Error()}
+		}
+		return latestVersionResultMsg{Version: v}
+	}
+}
+
+func runUpdateCmd(version string) tea.Cmd {
+	return func() tea.Msg {
+		err := update.DownloadAndReplace(version)
+		if err != nil {
+			return updateResultMsg{Err: err}
+		}
+		return nil
+	}
 }
 
 func runCommandCmd(host config.Host, command string) tea.Msg {
@@ -2348,8 +2485,9 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.readSSHOutput(cur.Id, cur.Session)
 }
 
-func Run() error {
+func Run(version string) error {
 	m := New()
+	m.version = version
 	p := tea.NewProgram(
 		m,
 		tea.WithAltScreen(),
