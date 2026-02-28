@@ -20,6 +20,7 @@ type KeyMap struct {
 	RunCommand   key.Binding
 	Transfer     key.Binding
 	ToggleSelect key.Binding
+	Import       key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -91,6 +92,10 @@ func DefaultKeyMap() KeyMap {
 		ToggleSelect: key.NewBinding(
 			key.WithKeys(" "),
 			key.WithHelp("space", "select"),
+		),
+		Import: key.NewBinding(
+			key.WithKeys("i"),
+			key.WithHelp("i", "import from ssh config"),
 		),
 	}
 }

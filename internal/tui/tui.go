@@ -17,6 +17,7 @@ import (
 	"github.com/shravan20/vecna/internal/config"
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
+	"github.com/shravan20/vecna/internal/sshconfig"
 	sshcrypto "golang.org/x/crypto/ssh"
 )
 
@@ -29,6 +30,7 @@ const (
 	ViewPortForward
 	ViewRunCommand
 	ViewFileTransfer
+	ViewImportSSH
 )
 
 type tabKind int
@@ -121,6 +123,13 @@ type Model struct {
 	transferMode            int
 	transferSourceHostIdx   int
 	transferDestHostIdx     int
+
+	// Import from SSH config view
+	importCandidates []sshconfig.SSHConfigHost
+	importSelected   map[string]bool
+	importCursor     int
+	importErr        string
+	importPath       string
 	transferSourcePathInput textinput.Model
 	transferDestPathInput   textinput.Model
 	transferHostHostFocus   int // 0=source list, 1=source path, 2=dest list, 3=dest path
@@ -394,6 +403,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRunCommand(msg)
 		case ViewFileTransfer:
 			return m.updateFileTransfer(msg)
+		case ViewImportSSH:
+			return m.updateImportSSH(msg)
 		}
 
 	case sshOutputMsg:
@@ -682,6 +693,21 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.initAddHostInputs()
 		return m, m.inputs[0].Focus()
 
+	case key.Matches(msg, m.keys.Import):
+		m.importPath = ""
+		m.importErr = ""
+		m.importSelected = make(map[string]bool)
+		m.importCursor = 0
+		candidates, err := sshconfig.Load("")
+		if err != nil {
+			m.importCandidates = nil
+			m.importErr = err.Error()
+		} else {
+			m.importCandidates = candidates
+		}
+		m.view = ViewImportSSH
+		return m, nil
+
 	case key.Matches(msg, m.keys.Edit):
 		if len(entries) > 0 && m.cursor < len(entries) {
 			e := entries[m.cursor]
@@ -889,6 +915,173 @@ func (m Model) updateAddHost(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.inputs[m.inputFocus], cmd = m.inputs[m.inputFocus].Update(msg)
 	return m, cmd
+}
+
+func (m Model) updateImportSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.view = ViewHome
+		m.importCandidates = nil
+		m.importSelected = nil
+		return m, nil
+	}
+
+	if m.importErr != "" {
+		return m, nil
+	}
+
+	entries := m.importCandidates
+	if len(entries) == 0 {
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.Up), msg.String() == "k":
+		if m.importCursor > 0 {
+			m.importCursor--
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Down), msg.String() == "j":
+		if m.importCursor < len(entries)-1 {
+			m.importCursor++
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.ToggleSelect):
+		name := entries[m.importCursor].Name
+		if m.importSelected[name] {
+			delete(m.importSelected, name)
+		} else {
+			if m.importSelected == nil {
+				m.importSelected = make(map[string]bool)
+			}
+			m.importSelected[name] = true
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		selected := make([]sshconfig.SSHConfigHost, 0)
+		for _, c := range entries {
+			if m.importSelected[c.Name] {
+				selected = append(selected, c)
+			}
+		}
+		if len(selected) == 0 {
+			// Import current row only
+			selected = []sshconfig.SSHConfigHost{entries[m.importCursor]}
+		}
+		imported := m.doImportSSHHosts(selected)
+		m.hosts = config.GetHosts()
+		m.view = ViewHome
+		m.importCandidates = nil
+		m.importSelected = nil
+		m.toast = fmt.Sprintf("Imported %d host(s)", imported)
+		m.toastSuccess = true
+		m.toastTimer = 40
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// doImportSSHHosts adds the selected SSH config hosts to vecna config in
+// dependency order (jump hosts first). Returns the number of hosts added.
+// ProxyJump is set when the jump target is also in the selected set.
+func (m *Model) doImportSSHHosts(selected []sshconfig.SSHConfigHost) int {
+	existingNames := make(map[string]bool)
+	for _, h := range config.GetHosts() {
+		existingNames[h.Name] = true
+	}
+
+	// Topological order: if B.ProxyJumpRaw matches A (Name or Hostname), add A before B.
+	ordered := make([]sshconfig.SSHConfigHost, 0, len(selected))
+	added := make(map[string]bool)
+	for len(ordered) < len(selected) {
+		progress := false
+		for _, c := range selected {
+			if added[c.Name] {
+				continue
+			}
+			// Check if any dependency is not yet in ordered
+			depName := ""
+			if c.ProxyJumpRaw != "" {
+				for _, o := range selected {
+					if o.Name == c.ProxyJumpRaw || o.Hostname == c.ProxyJumpRaw {
+						depName = o.Name
+						break
+					}
+					// ProxyJump can be "user@host:port" - match host part
+					if idx := strings.Index(c.ProxyJumpRaw, "@"); idx >= 0 {
+						hostPart := c.ProxyJumpRaw[idx+1:]
+						if colon := strings.Index(hostPart, ":"); colon >= 0 {
+							hostPart = hostPart[:colon]
+						}
+						if o.Name == hostPart || o.Hostname == hostPart {
+							depName = o.Name
+							break
+						}
+					}
+				}
+			}
+			if depName != "" && !added[depName] {
+				continue
+			}
+			ordered = append(ordered, c)
+			added[c.Name] = true
+			progress = true
+		}
+		if !progress {
+			// No progress: add remaining in any order (e.g. broken ProxyJump refs)
+			for _, c := range selected {
+				if !added[c.Name] {
+					ordered = append(ordered, c)
+					added[c.Name] = true
+				}
+			}
+			break
+		}
+	}
+
+	count := 0
+	for _, c := range ordered {
+		if existingNames[c.Name] {
+			continue
+		}
+		proxyJump := ""
+		if c.ProxyJumpRaw != "" {
+			for _, o := range selected {
+				if o.Name == c.ProxyJumpRaw || o.Hostname == c.ProxyJumpRaw {
+					proxyJump = o.Name
+					break
+				}
+				if idx := strings.Index(c.ProxyJumpRaw, "@"); idx >= 0 {
+					hostPart := c.ProxyJumpRaw[idx+1:]
+					if colon := strings.Index(hostPart, ":"); colon >= 0 {
+						hostPart = hostPart[:colon]
+					}
+					if o.Name == hostPart || o.Hostname == hostPart {
+						proxyJump = o.Name
+						break
+					}
+				}
+			}
+		}
+		h := config.Host{
+			Name:            c.Name,
+			Hostname:        c.Hostname,
+			User:            c.User,
+			Port:            c.Port,
+			IdentityFile:    c.IdentityFile,
+			Password:        "",
+			KeyDeployed:     true,
+			AutoGenerateKey: false,
+			ProxyJump:       proxyJump,
+		}
+		config.AddHost(h)
+		existingNames[c.Name] = true
+		count++
+	}
+	if count > 0 {
+		_ = config.Save()
+	}
+	return count
 }
 
 func (m Model) updatePortForward(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1622,6 +1815,8 @@ func (m Model) View() string {
 		body = m.viewRunCommand()
 	case ViewFileTransfer:
 		body = m.viewFileTransfer()
+	case ViewImportSSH:
+		body = m.viewImportSSH()
 	default:
 		body = m.viewTabContent()
 	}

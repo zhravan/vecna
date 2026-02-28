@@ -276,6 +276,8 @@ func (m Model) renderStatusBar() string {
 		keyHint("/", "filter"),
 		keyHint("space", "select"),
 		keyHint("↑↓", "nav"),
+		keyHint("a", "add"),
+		keyHint("i", "import"),
 		keyHint("c", "connect"),
 		keyHint("r", "run cmd"),
 		keyHint("?", "help"),
@@ -512,6 +514,62 @@ func (m Model) viewRunCommand() string {
 	list := strings.Join(listLines, "\n")
 	panel := stylePanelActive.Width(60).Padding(1, 2).Render(list)
 	status := styleStatusBar.Render(keyHint("/", "filter") + "  " + keyHint("↑↓", "nav") + "  " + keyHint("⏎", "run") + "  " + keyHint("esc", "back"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
+}
+
+func (m Model) viewImportSSH() string {
+	logo := styleLogo.Render("◈ VECNA")
+	header := styleHeader.Render(logo + styleDim.Render(" / Import from SSH config"))
+
+	if m.importErr != "" {
+		msg := styleDim.Render("Could not load ~/.ssh/config: " + m.importErr)
+		status := styleStatusBar.Render(keyHint("esc", "back"))
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", msg, "", status)
+	}
+
+	if len(m.importCandidates) == 0 {
+		msg := styleDim.Render("No hosts found in ~/.ssh/config (or file is empty).")
+		status := styleStatusBar.Render(keyHint("esc", "back"))
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", msg, "", status)
+	}
+
+	entries := m.importCandidates
+	width := 72
+	if width > m.width-4 {
+		width = m.width - 4
+	}
+	var lines []string
+	lines = append(lines, "", styleDim.Render("Select hosts to import, then press Enter. Space = toggle."), "")
+	for i, c := range entries {
+		sel := " "
+		if m.importSelected[c.Name] {
+			sel = "▣"
+		}
+		info := fmt.Sprintf("%s@%s:%d", c.User, c.Hostname, c.Port)
+		if c.IdentityFile != "" {
+			base := filepath.Base(c.IdentityFile)
+			if len(base) > 20 {
+				base = base[:17] + "..."
+			}
+			info += "  " + styleDim.Render(base)
+		}
+		if c.ProxyJumpRaw != "" {
+			info += "  " + styleDim.Render("→ "+c.ProxyJumpRaw)
+		}
+		nameAndInfo := c.Name + "  " + info
+		if i == m.importCursor {
+			lines = append(lines, " ▸ "+sel+" "+styleListItemSelected.Render(nameAndInfo))
+		} else {
+			lines = append(lines, "   "+sel+" "+styleListItem.Render(nameAndInfo))
+		}
+	}
+	body := strings.Join(lines, "\n")
+	panel := stylePanelActive.Width(width).Padding(1, 2).Render(body)
+	status := styleStatusBar.Render(
+		keyHint("space", "toggle") + "  " +
+			keyHint("↑↓", "nav") + "  " +
+			keyHint("⏎", "import selected") + "  " +
+			keyHint("esc", "back"))
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
 }
 
