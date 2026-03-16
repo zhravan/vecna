@@ -357,6 +357,30 @@ func (m Model) viewAddHost() string {
 	return m.renderWithToast(mainView)
 }
 
+func (m Model) viewDeleteConfirm() string {
+	if m.width == 0 {
+		return renderLoader(40, 12, m.animFrame, "Loading...")
+	}
+	logo := styleLogo.Render("◈ VECNA")
+	header := styleHeader.Render(logo + styleDim.Render(" / Delete Host"))
+	msg := fmt.Sprintf("Are you sure you want to delete host '%s'?", m.pendingDeleteHostName)
+	panelWidth := 50
+	if panelWidth > m.width-4 {
+		panelWidth = m.width - 4
+	}
+	panel := stylePanelActive.
+		Width(panelWidth).
+		Padding(1, 2).
+		Render(msg + "\n\n" + styleDim.Render("y: yes • n / Esc: cancel"))
+	mainView := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		panel,
+	)
+	return m.renderWithToast(mainView)
+}
+
 func (m Model) viewPortForward() string {
 	if m.width == 0 {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
