@@ -277,6 +277,8 @@ func (m Model) renderStatusBar() string {
 		keyHint("space", "select"),
 		keyHint("↑↓", "nav"),
 		keyHint("a", "add"),
+		keyHint("e", "edit"),
+		keyHint("d", "delete"),
 		keyHint("i", "import"),
 		keyHint("c", "connect"),
 		keyHint("r", "run cmd"),
