@@ -280,6 +280,7 @@ func (m Model) renderStatusBar() string {
 		keyHint("e", "edit"),
 		keyHint("d", "delete"),
 		keyHint("i", "import"),
+		keyHint("v", "version"),
 		keyHint("c", "connect"),
 		keyHint("r", "run cmd"),
 		keyHint("?", "help"),
@@ -288,14 +289,22 @@ func (m Model) renderStatusBar() string {
 
 	left := strings.Join(keys, "  ")
 
+	versionStr := ""
+	if m.version != "" {
+		versionStr = styleDim.Render("vecna " + m.version)
+	}
 	hostCount := styleDim.Render(fmt.Sprintf("%d hosts", len(m.hosts)))
+	right := hostCount
+	if versionStr != "" {
+		right = versionStr + "  " + hostCount
+	}
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(hostCount) - 4
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
 	if gap < 1 {
 		gap = 1
 	}
 
-	return styleStatusBar.Render(left + strings.Repeat(" ", gap) + hostCount)
+	return styleStatusBar.Render(left + strings.Repeat(" ", gap) + right)
 }
 
 func (m Model) viewAddHost() string {
@@ -316,7 +325,7 @@ func (m Model) viewAddHost() string {
 	}
 
 	var fields []string
-	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Proxy jump"}
+	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Identity file", "Proxy jump"}
 
 	for i, input := range m.inputs {
 		labelText := labels[i]
@@ -346,6 +355,7 @@ func (m Model) viewAddHost() string {
 		Render(form)
 
 	hint := styleDim.Render("Tab/↓: next • Shift+Tab/↑: prev • Ctrl+P: toggle password • Enter: save • Esc: cancel")
+	hint2 := styleDim.Render("Provide password and/or identity file path. No default key fallback.")
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -354,6 +364,7 @@ func (m Model) viewAddHost() string {
 		panel,
 		"",
 		hint,
+		hint2,
 	)
 
 	return m.renderWithToast(mainView)
@@ -596,6 +607,64 @@ func (m Model) viewImportSSH() string {
 			keyHint("↑↓", "nav") + "  " +
 			keyHint("⏎", "import selected") + "  " +
 			keyHint("esc", "back"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
+}
+
+func (m Model) viewVersion() string {
+	logo := styleLogo.Render("◈ VECNA")
+	header := styleHeader.Render(logo + styleDim.Render(" / Version"))
+
+	panelW := 50
+	if panelW > m.width-4 {
+		panelW = m.width - 4
+	}
+
+	curVer := m.version
+	if curVer == "" {
+		curVer = "—"
+	}
+	latestVer := m.latestVersion
+	if latestVer == "" && m.versionErr == "" {
+		latestVer = "…"
+	} else if latestVer == "" && m.versionErr != "" {
+		latestVer = styleError.Render("error")
+	}
+
+	lines := []string{
+		"",
+		fmt.Sprintf("  %s  %s", styleKey.Render("Current"), curVer),
+		fmt.Sprintf("  %s  %s", styleKey.Render("Latest "), latestVer),
+		"",
+		stylePanelTitle.Render("ACTIONS"),
+		"",
+	}
+	opts := []string{"Update to latest (then restart)", "Switch to version...", "Check for latest"}
+	for i, opt := range opts {
+		line := "  " + opt
+		if i == m.versionCursor && !m.versionInputMode {
+			line = " ▸ " + styleListItemSelected.Render(opt)
+		} else {
+			line = "   " + styleListItem.Render(opt)
+		}
+		lines = append(lines, line)
+	}
+	if m.versionInputMode {
+		lines = append(lines, "", styleInputLabel.Render("Version (e.g. 0.1.3):"), m.versionInput.View())
+	}
+	if m.versionErr != "" {
+		lines = append(lines, "", styleError.Render(m.versionErr))
+	}
+	if m.versionUpdating {
+		lines = append(lines, "", styleDim.Render("Updating... (app will restart when done)"))
+	}
+
+	body := strings.Join(lines, "\n")
+	panel := stylePanelActive.Width(panelW).Padding(1, 2).Render(body)
+	statusStr := keyHint("↑↓", "nav") + "  " + keyHint("⏎", "run") + "  " + keyHint("esc", "back")
+	if m.versionInputMode {
+		statusStr = "Type version and press Enter (e.g. 0.1.3). Esc to cancel."
+	}
+	status := styleStatusBar.Render(statusStr)
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", panel, "", status)
 }
 

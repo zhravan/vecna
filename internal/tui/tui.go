@@ -18,6 +18,7 @@ import (
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
 	"github.com/shravan20/vecna/internal/sshconfig"
+	"github.com/shravan20/vecna/internal/update"
 	sshcrypto "golang.org/x/crypto/ssh"
 )
 
@@ -32,6 +33,7 @@ const (
 	ViewFileTransfer
 	ViewImportSSH
 	ViewDeleteConfirm
+	ViewVersion
 )
 
 type tabKind int
@@ -144,6 +146,15 @@ type Model struct {
 	// Active SSH count from server (who | wc -l); -1 = unknown/error
 	activeSSHCountByHost   map[string]int
 	fetchingActiveSSHForHost string
+
+	// Version/update
+	version          string
+	latestVersion    string
+	versionCursor    int
+	versionInput     textinput.Model
+	versionInputMode bool
+	versionUpdating  bool
+	versionErr       string
 }
 
 type activeForward struct {
@@ -241,7 +252,7 @@ func New() Model {
 }
 
 func (m *Model) initAddHostInputs() {
-	m.inputs = make([]textinput.Model, 7)
+	m.inputs = make([]textinput.Model, 8)
 
 	for i := range m.inputs {
 		m.inputs[i] = textinput.New()
@@ -261,7 +272,8 @@ func (m *Model) initAddHostInputs() {
 	m.inputs[3].CharLimit = 5
 	m.inputs[4].Placeholder = "password (for first-time key setup, optional)"
 	m.inputs[5].Placeholder = "y/n (auto-generate SSH key?)"
-	m.inputs[6].Placeholder = "optional: name of jump/bastion host"
+	m.inputs[6].Placeholder = "e.g. ~/.ssh/id_rsa (required if no password)"
+	m.inputs[7].Placeholder = "optional: name of jump/bastion host"
 
 	m.inputs[0].Focus()
 	m.inputFocus = 0
@@ -283,7 +295,8 @@ func (m *Model) initEditHostInputs(h config.Host, configIndex int) {
 	if h.AutoGenerateKey {
 		m.inputs[5].SetValue("y")
 	}
-	m.inputs[6].SetValue(h.ProxyJump)
+	m.inputs[6].SetValue(h.IdentityFile)
+	m.inputs[7].SetValue(h.ProxyJump)
 	m.editingHostIndex = configIndex
 }
 
@@ -412,6 +425,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateImportSSH(msg)
 		case ViewDeleteConfirm:
 			return m.updateDeleteConfirm(msg)
+		case ViewVersion:
+			return m.updateVersion(msg)
 		}
 
 	case sshOutputMsg:
@@ -538,6 +553,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activeSSHCountResultMsg:
 		m.fetchingActiveSSHForHost = ""
 		m.activeSSHCountByHost[msg.HostName] = msg.Count
+		return m, nil
+
+	case latestVersionResultMsg:
+		if msg.Err != "" {
+			m.latestVersion = ""
+			m.versionErr = msg.Err
+		} else {
+			m.latestVersion = msg.Version
+			m.versionErr = ""
+		}
+		return m, nil
+
+	case updateResultMsg:
+		m.versionUpdating = false
+		if msg.Err != nil {
+			m.versionErr = msg.Err.Error()
+			m.toast = "Update failed: " + msg.Err.Error()
+			m.toastSuccess = false
+			m.toastTimer = 80
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+		}
 		return m, nil
 
 	case listLocalResultMsg:
@@ -714,6 +750,17 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.view = ViewImportSSH
 		return m, nil
+
+	case key.Matches(msg, m.keys.Version):
+		m.view = ViewVersion
+		m.versionCursor = 0
+		m.versionInputMode = false
+		m.versionErr = ""
+		m.versionInput = textinput.New()
+		m.versionInput.Placeholder = "e.g. 0.1.3"
+		m.versionInput.CharLimit = 20
+		m.versionInput.Width = 24
+		return m, fetchLatestVersionCmd()
 
 	case key.Matches(msg, m.keys.Edit):
 		if len(entries) > 0 && m.cursor < len(entries) {
@@ -1012,6 +1059,67 @@ func (m Model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingDeleteHostName = ""
 		m.view = ViewHome
 		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) updateVersion(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Back) {
+		m.view = ViewHome
+		return m, nil
+	}
+	if m.versionUpdating {
+		return m, nil
+	}
+	if m.versionInputMode {
+		switch msg.String() {
+		case "esc":
+			m.versionInputMode = false
+			m.versionInput.Blur()
+			return m, nil
+		case "enter":
+			v := strings.TrimSpace(m.versionInput.Value())
+			m.versionInputMode = false
+			m.versionInput.Blur()
+			if v == "" {
+				return m, nil
+			}
+			m.versionUpdating = true
+			m.versionErr = ""
+			return m, runUpdateCmd(v)
+		}
+		var cmd tea.Cmd
+		m.versionInput, cmd = m.versionInput.Update(msg)
+		return m, cmd
+	}
+	switch {
+	case key.Matches(msg, m.keys.Up), msg.String() == "k":
+		if m.versionCursor > 0 {
+			m.versionCursor--
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Down), msg.String() == "j":
+		if m.versionCursor < 2 {
+			m.versionCursor++
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.Enter):
+		switch m.versionCursor {
+		case 0:
+			// Update to latest
+			m.versionUpdating = true
+			m.versionErr = ""
+			return m, runUpdateCmd("latest")
+		case 1:
+			// Switch to version: focus input
+			m.versionInputMode = true
+			m.versionInput.SetValue("")
+			return m, m.versionInput.Focus()
+		case 2:
+			// Check for latest
+			m.versionErr = ""
+			return m, fetchLatestVersionCmd()
+		}
 	}
 	return m, nil
 }
@@ -1703,12 +1811,12 @@ func (m *Model) saveHost() {
 			Hostname:        hostname,
 			User:            user,
 			Port:            port,
-			IdentityFile:    cur.IdentityFile,
+			IdentityFile:    strings.TrimSpace(m.inputs[6].Value()),
 			Password:        cur.Password,
 			KeyDeployed:     cur.KeyDeployed,
 			AutoGenerateKey: cur.AutoGenerateKey,
 			Tags:            cur.Tags,
-			ProxyJump:       strings.TrimSpace(m.inputs[6].Value()),
+			ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
 		}
 		if newPass := m.inputs[4].Value(); newPass != "" {
 			encrypted, err := config.EncryptPassword(newPass)
@@ -1735,6 +1843,7 @@ func (m *Model) saveHost() {
 	// Add new host
 	password := m.inputs[4].Value()
 	autoGenKey := strings.ToLower(m.inputs[5].Value()) == "y" || strings.ToLower(m.inputs[5].Value()) == "yes"
+	customKeyPath := strings.TrimSpace(m.inputs[6].Value())
 
 	var identityFile string
 	if autoGenKey {
@@ -1746,6 +1855,8 @@ func (m *Model) saveHost() {
 			return
 		}
 		identityFile = privatePath
+	} else if customKeyPath != "" {
+		identityFile = customKeyPath
 	}
 
 	sshHost := ssh.Host{
@@ -1754,13 +1865,6 @@ func (m *Model) saveHost() {
 		User:         user,
 		Port:         port,
 		IdentityFile: identityFile,
-	}
-
-	if password == "" && identityFile == "" {
-		m.toast = "Password or existing key required for validation"
-		m.toastSuccess = false
-		m.toastTimer = 50
-		return
 	}
 
 	m.toast = "→ Validating connection..."
@@ -1786,7 +1890,10 @@ func (m *Model) saveHost() {
 		}
 	}
 
-	keyDeployed := false
+	keyDeployed := identityFile == "" && password == ""
+	if identityFile != "" && !autoGenKey {
+		keyDeployed = true // existing key path provided
+	}
 	if autoGenKey && password != "" && identityFile != "" {
 		m.toast = "→ Deploying SSH key..."
 		m.toastSuccess = false
@@ -1814,7 +1921,7 @@ func (m *Model) saveHost() {
 		Password:        encryptedPassword,
 		KeyDeployed:     keyDeployed,
 		AutoGenerateKey: autoGenKey,
-		ProxyJump:       strings.TrimSpace(m.inputs[6].Value()),
+		ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
 	}
 
 	config.AddHost(h)
@@ -1854,6 +1961,8 @@ func (m Model) View() string {
 		body = m.viewImportSSH()
 	case ViewDeleteConfirm:
 		body = m.viewDeleteConfirm()
+	case ViewVersion:
+		body = m.viewVersion()
 	default:
 		body = m.viewTabContent()
 	}
@@ -1949,6 +2058,35 @@ func filterTransferEntries(entries []transferFileEntry, query string) []transfer
 type activeSSHCountResultMsg struct {
 	HostName string
 	Count    int // -1 on error
+}
+
+type latestVersionResultMsg struct {
+	Version string // empty if error
+	Err    string
+}
+
+type updateResultMsg struct {
+	Err error
+}
+
+func fetchLatestVersionCmd() tea.Cmd {
+	return func() tea.Msg {
+		v, err := update.FetchLatestVersion()
+		if err != nil {
+			return latestVersionResultMsg{Err: err.Error()}
+		}
+		return latestVersionResultMsg{Version: v}
+	}
+}
+
+func runUpdateCmd(version string) tea.Cmd {
+	return func() tea.Msg {
+		err := update.DownloadAndReplace(version)
+		if err != nil {
+			return updateResultMsg{Err: err}
+		}
+		return nil
+	}
 }
 
 func runCommandCmd(host config.Host, command string) tea.Msg {
@@ -2384,8 +2522,9 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.readSSHOutput(cur.Id, cur.Session)
 }
 
-func Run() error {
+func Run(version string) error {
 	m := New()
+	m.version = version
 	p := tea.NewProgram(
 		m,
 		tea.WithAltScreen(),
