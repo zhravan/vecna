@@ -33,6 +33,8 @@ type Host struct {
 	AutoGenerateKey bool     `mapstructure:"auto_generate_key"` // true if should auto-generate key
 	Tags            []string `mapstructure:"tags"`
 	ProxyJump       string   `mapstructure:"proxy_jump"` // name of another vecna host to use as jump/bastion
+	Notes           string   `mapstructure:"notes"`      // short reminder (shown in details)
+	Pinned          bool     `mapstructure:"pinned"`     // keep near top of host list
 }
 
 var C Config
