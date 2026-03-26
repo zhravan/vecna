@@ -22,6 +22,7 @@ type KeyMap struct {
 	ToggleSelect key.Binding
 	Import       key.Binding
 	Version      key.Binding
+	Pin          key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -101,6 +102,10 @@ func DefaultKeyMap() KeyMap {
 		Version: key.NewBinding(
 			key.WithKeys("v"),
 			key.WithHelp("v", "version"),
+		),
+		Pin: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "pin"),
 		),
 	}
 }
