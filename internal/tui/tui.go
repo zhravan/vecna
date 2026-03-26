@@ -1916,11 +1916,11 @@ func (m *Model) saveHost() {
 			}
 			h.Password = encrypted
 		}
+		config.UpdateHost(m.editingHostIndex, h)
 		if cur.Name != name {
 			m.appState = state.RenameHost(m.appState, cur.Name, name)
 			_ = state.Save(m.appState)
 		}
-		config.UpdateHost(m.editingHostIndex, h)
 		m.hosts = config.GetHosts()
 		m.toast = fmt.Sprintf("Host '%s' updated", name)
 		m.toastSuccess = true
