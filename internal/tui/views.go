@@ -158,16 +158,20 @@ func (m Model) renderHostsPanel(width, height int) string {
 			if m.selectedHostNames[h.Name] {
 				sel = "▣"
 			}
+			pin := " "
+			if h.Pinned {
+				pin = styleKey.Render("★")
+			}
 			name := h.Name
 			info := styleDim.Render(fmt.Sprintf("%s@%s", h.User, h.Hostname))
 
 			var line string
 			if i == m.cursor {
 				name = styleListItemSelected.Render(name)
-				line = fmt.Sprintf(" %s ▸ %s %s %s", sel, status, name, info)
+				line = fmt.Sprintf(" %s %s ▸ %s %s %s", sel, pin, status, name, info)
 			} else {
 				name = styleListItem.Render(name)
-				line = fmt.Sprintf(" %s   %s %s %s", sel, status, name, info)
+				line = fmt.Sprintf(" %s %s   %s %s %s", sel, pin, status, name, info)
 			}
 			items = append(items, line)
 		}
@@ -220,6 +224,15 @@ func (m Model) renderDetailPanel(width, height int) string {
 		if h.ProxyJump != "" {
 			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Jump"), h.ProxyJump))
 		}
+		if h.Pinned {
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Pinned"), "yes"))
+		}
+		if strings.TrimSpace(h.Notes) != "" {
+			lines = append(lines, fmt.Sprintf("%s", styleKey.Render("Notes")))
+			for _, noteLine := range wrapLines(strings.TrimSpace(h.Notes), width-2) {
+				lines = append(lines, "  "+noteLine)
+			}
+		}
 		// Active SSH count from server (who | wc -l)
 		var activeSSHStr string
 		if m.fetchingActiveSSHForHost == h.Name {
@@ -255,6 +268,7 @@ func (m Model) renderDetailPanel(width, height int) string {
 		lines = append(lines, fmt.Sprintf("  %s  Port forward", styleKey.Render("p")))
 		lines = append(lines, fmt.Sprintf("  %s  Run command (on selected)", styleKey.Render("r")))
 		lines = append(lines, fmt.Sprintf("  %s  File transfer", styleKey.Render("t")))
+		lines = append(lines, fmt.Sprintf("  %s  Pin / unpin host", styleKey.Render("P")))
 
 		content = strings.Join(lines, "\n")
 	}
@@ -283,6 +297,7 @@ func (m Model) renderStatusBar() string {
 		keyHint("v", "version"),
 		keyHint("c", "connect"),
 		keyHint("r", "run cmd"),
+		keyHint("P", "pin"),
 		keyHint("?", "help"),
 		keyHint("q", "quit"),
 	}
@@ -325,7 +340,7 @@ func (m Model) viewAddHost() string {
 	}
 
 	var fields []string
-	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Identity file", "Proxy jump"}
+	labels := []string{"Name", "Host", "User", "Port", "Password", "Auto-gen key", "Identity file", "Proxy jump", "Notes"}
 
 	for i, input := range m.inputs {
 		labelText := labels[i]

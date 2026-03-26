@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/shravan20/vecna/internal/sftp"
 	"github.com/shravan20/vecna/internal/ssh"
 	"github.com/shravan20/vecna/internal/sshconfig"
+	"github.com/shravan20/vecna/internal/state"
 	"github.com/shravan20/vecna/internal/update"
 	sshcrypto "golang.org/x/crypto/ssh"
 )
@@ -155,6 +157,9 @@ type Model struct {
 	versionInputMode bool
 	versionUpdating  bool
 	versionErr       string
+
+	// Recents (persisted in ~/.config/vecna/state.json)
+	appState state.State
 }
 
 type activeForward struct {
@@ -198,20 +203,25 @@ func (m Model) filteredCommandEntries() []commandEntry {
 	return out
 }
 
-// filteredHostEntries returns hosts matching the filter query (name or tag, case-insensitive).
+// filteredHostEntries returns hosts matching the filter query (name, notes, or tag, case-insensitive),
+// ordered: pinned (A–Z), then recent (most recent first among unpinned), then remaining A–Z.
 func (m Model) filteredHostEntries() []hostEntry {
 	query := strings.TrimSpace(m.hostFilter.Value())
+	var out []hostEntry
 	if query == "" {
-		out := make([]hostEntry, len(m.hosts))
+		out = make([]hostEntry, len(m.hosts))
 		for i, h := range m.hosts {
 			out[i] = hostEntry{Host: h, Index: i}
 		}
-		return out
+		return m.sortHostEntries(out)
 	}
 	q := strings.ToLower(query)
-	var out []hostEntry
 	for i, h := range m.hosts {
 		if strings.Contains(strings.ToLower(h.Name), q) {
+			out = append(out, hostEntry{Host: h, Index: i})
+			continue
+		}
+		if strings.Contains(strings.ToLower(h.Notes), q) {
 			out = append(out, hostEntry{Host: h, Index: i})
 			continue
 		}
@@ -222,12 +232,41 @@ func (m Model) filteredHostEntries() []hostEntry {
 			}
 		}
 	}
-	return out
+	return m.sortHostEntries(out)
+}
+
+func (m Model) sortHostEntries(entries []hostEntry) []hostEntry {
+	recentIdx := make(map[string]int)
+	for i, n := range m.appState.RecentHostNames {
+		if _, ok := recentIdx[n]; !ok {
+			recentIdx[n] = i
+		}
+	}
+	sorted := append([]hostEntry(nil), entries...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		pi, pj := sorted[i].Host.Pinned, sorted[j].Host.Pinned
+		if pi != pj {
+			return pi && !pj
+		}
+		if pi {
+			return sorted[i].Host.Name < sorted[j].Host.Name
+		}
+		ri, okI := recentIdx[sorted[i].Host.Name]
+		rj, okJ := recentIdx[sorted[j].Host.Name]
+		if okI && okJ {
+			return ri < rj
+		}
+		if okI != okJ {
+			return okI
+		}
+		return sorted[i].Host.Name < sorted[j].Host.Name
+	})
+	return sorted
 }
 
 func New() Model {
 	f := textinput.New()
-	f.Placeholder = "Filter by name or tag..."
+	f.Placeholder = "Filter by name, notes, or tag..."
 	f.CharLimit = 80
 	f.Width = 30
 	runCmdF := textinput.New()
@@ -238,6 +277,7 @@ func New() Model {
 		view:                  ViewHome,
 		keys:                  DefaultKeyMap(),
 		hosts:                 config.GetHosts(),
+		appState:              state.Load(),
 		hostFilter:            f,
 		homeFocus:             0,
 		runCommandFilter:      runCmdF,
@@ -252,7 +292,7 @@ func New() Model {
 }
 
 func (m *Model) initAddHostInputs() {
-	m.inputs = make([]textinput.Model, 8)
+	m.inputs = make([]textinput.Model, 9)
 
 	for i := range m.inputs {
 		m.inputs[i] = textinput.New()
@@ -274,6 +314,8 @@ func (m *Model) initAddHostInputs() {
 	m.inputs[5].Placeholder = "y/n (auto-generate SSH key?)"
 	m.inputs[6].Placeholder = "e.g. ~/.ssh/id_rsa (required if no password)"
 	m.inputs[7].Placeholder = "optional: name of jump/bastion host"
+	m.inputs[8].Placeholder = "optional: notes (what this host is for)"
+	m.inputs[8].CharLimit = 512
 
 	m.inputs[0].Focus()
 	m.inputFocus = 0
@@ -297,6 +339,7 @@ func (m *Model) initEditHostInputs(h config.Host, configIndex int) {
 	}
 	m.inputs[6].SetValue(h.IdentityFile)
 	m.inputs[7].SetValue(h.ProxyJump)
+	m.inputs[8].SetValue(h.Notes)
 	m.editingHostIndex = configIndex
 }
 
@@ -352,6 +395,7 @@ func startPortForwardCmd(host config.Host, localPort, remoteHost, remotePort str
 		client.Close()
 	}
 	return portForwardStartedMsg{
+		hostName: host.Name,
 		fwd: activeForward{
 			id:         nextID,
 			label:      fmt.Sprintf("%s → %s", localAddr, remoteAddr),
@@ -498,6 +542,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tabs[i].Log = append(m.tabs[i].Log, "✓ Connected")
 				m.tabs[i].Output = ""
 				m.lastSSHAt[m.tabs[i].Host.Name] = time.Now()
+				m.appState = state.RecordRecent(m.appState, m.tabs[i].Host.Name)
+				_ = state.Save(m.appState)
 				cols, rows := m.width, m.height-4
 				if cols < 80 {
 					cols = 80
@@ -521,6 +567,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case portForwardStartedMsg:
 		m.portForwardStarting = false
 		m.activeForwards = append(m.activeForwards, msg.fwd)
+		if msg.hostName != "" {
+			m.appState = state.RecordRecent(m.appState, msg.hostName)
+			_ = state.Save(m.appState)
+		}
 		m.toast = fmt.Sprintf("Forward %s → %s", msg.fwd.localAddr, msg.fwd.remoteAddr)
 		m.toastSuccess = true
 		m.toastTimer = 30
@@ -779,6 +829,34 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case key.Matches(msg, m.keys.Pin):
+		if len(entries) > 0 && m.cursor < len(entries) {
+			e := entries[m.cursor]
+			if e.Index < 0 || e.Index >= len(m.hosts) {
+				return m, nil
+			}
+			h := m.hosts[e.Index]
+			h.Pinned = !h.Pinned
+			config.UpdateHost(e.Index, h)
+			m.hosts = config.GetHosts()
+			hostName := e.Host.Name
+			newEntries := m.filteredHostEntries()
+			for i, ent := range newEntries {
+				if ent.Host.Name == hostName {
+					m.cursor = i
+					break
+				}
+			}
+			if h.Pinned {
+				m.toast = fmt.Sprintf("Pinned '%s'", hostName)
+			} else {
+				m.toast = fmt.Sprintf("Unpinned '%s'", hostName)
+			}
+			m.toastSuccess = true
+			m.toastTimer = 25
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+		}
+
 	case key.Matches(msg, m.keys.Connect), key.Matches(msg, m.keys.Enter):
 		if len(entries) > 0 && m.cursor < len(entries) {
 			h := entries[m.cursor].Host
@@ -829,6 +907,8 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				runHosts = []config.Host{h}
 			}
 			m.runCommandHosts = runHosts
+			m.appState = state.RecordRecent(m.appState, h.Name)
+			_ = state.Save(m.appState)
 			return m, nil
 		}
 
@@ -863,6 +943,8 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.transferLocalCursor = 0
 			m.transferRemoteCursor = 0
 			m.transferMode = 0
+			m.appState = state.RecordRecent(m.appState, h.Name)
+			_ = state.Save(m.appState)
 			return m, tea.Batch(listLocalCmd(home), listRemoteCmd(h, "/"))
 		}
 
@@ -884,6 +966,8 @@ func (m Model) updateHome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.toast = "SFTP opened in new terminal"
 				m.toastSuccess = true
 				m.toastTimer = 25
+				m.appState = state.RecordRecent(m.appState, h.Name)
+				_ = state.Save(m.appState)
 			}
 			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 		}
@@ -1042,6 +1126,8 @@ func (m Model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y", "enter":
 		config.RemoveHost(m.pendingDeleteConfigIndex)
+		m.appState = state.RemoveHost(m.appState, m.pendingDeleteHostName)
+		_ = state.Save(m.appState)
 		m.hosts = config.GetHosts()
 		entries := m.filteredHostEntries()
 		if m.cursor >= len(entries) && m.cursor > 0 {
@@ -1817,6 +1903,8 @@ func (m *Model) saveHost() {
 			AutoGenerateKey: cur.AutoGenerateKey,
 			Tags:            cur.Tags,
 			ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
+			Notes:           strings.TrimSpace(m.inputs[8].Value()),
+			Pinned:          cur.Pinned,
 		}
 		if newPass := m.inputs[4].Value(); newPass != "" {
 			encrypted, err := config.EncryptPassword(newPass)
@@ -1827,6 +1915,10 @@ func (m *Model) saveHost() {
 				return
 			}
 			h.Password = encrypted
+		}
+		if cur.Name != name {
+			m.appState = state.RenameHost(m.appState, cur.Name, name)
+			_ = state.Save(m.appState)
 		}
 		config.UpdateHost(m.editingHostIndex, h)
 		m.hosts = config.GetHosts()
@@ -1922,6 +2014,7 @@ func (m *Model) saveHost() {
 		KeyDeployed:     keyDeployed,
 		AutoGenerateKey: autoGenKey,
 		ProxyJump:       strings.TrimSpace(m.inputs[7].Value()),
+		Notes:           strings.TrimSpace(m.inputs[8].Value()),
 	}
 
 	config.AddHost(h)
@@ -1998,7 +2091,8 @@ type animTickMsg struct{}
 type sshTickMsg struct{}
 
 type portForwardStartedMsg struct {
-	fwd activeForward
+	hostName string
+	fwd      activeForward
 }
 type portForwardErrorMsg string
 
