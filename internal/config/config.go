@@ -159,6 +159,15 @@ func RemoveCommand(index int) {
 	Save()
 }
 
+func UpdateCommand(index int, cmd Command) {
+	if index < 0 || index >= len(C.Commands) {
+		return
+	}
+	C.Commands[index] = cmd
+	viper.Set("commands", C.Commands)
+	Save()
+}
+
 func AddHost(h Host) {
 	C.Hosts = append(C.Hosts, h)
 	viper.Set("hosts", C.Hosts)

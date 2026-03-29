@@ -36,6 +36,8 @@ const (
 	ViewImportSSH
 	ViewDeleteConfirm
 	ViewVersion
+	ViewAddCommand
+	ViewDeleteCommandConfirm
 )
 
 type tabKind int
@@ -57,25 +59,25 @@ type tab struct {
 }
 
 type Model struct {
-	view         View
-	width        int
-	height       int
-	keys         KeyMap
-	cursor       int
-	hosts        []config.Host
-	inputs       []textinput.Model
-	inputFocus   int
-	err          error
-	sshHost      *config.Host
-	toast        string
-	toastTimer   int
-	toastSuccess bool
-	showPassword bool
-	animFrame    int
+	view             View
+	width            int
+	height           int
+	keys             KeyMap
+	cursor           int
+	hosts            []config.Host
+	inputs           []textinput.Model
+	inputFocus       int
+	err              error
+	sshHost          *config.Host
+	toast            string
+	toastTimer       int
+	toastSuccess     bool
+	showPassword     bool
+	animFrame        int
 	editingHostIndex int
 
 	// Delete host confirmation
-	pendingDeleteConfigIndex int  // config index of host to delete; -1 when not pending
+	pendingDeleteConfigIndex int // config index of host to delete; -1 when not pending
 	pendingDeleteHostName    string
 
 	// Tabs: tab 0 is always Hosts; rest are SSH sessions
@@ -84,12 +86,12 @@ type Model struct {
 	nextTabId       int
 
 	// Port forward view
-	portForwardInputs  []textinput.Model
-	portForwardFocus   int
-	portForwardCursor  int
-	activeForwards     []activeForward
+	portForwardInputs   []textinput.Model
+	portForwardFocus    int
+	portForwardCursor   int
+	activeForwards      []activeForward
 	portForwardStarting bool
-	portForwardNextID  int
+	portForwardNextID   int
 
 	// Home filter
 	hostFilter textinput.Model
@@ -106,39 +108,48 @@ type Model struct {
 	// Multi-select on home: host name -> selected
 	selectedHostNames map[string]bool
 
+	// Add/Edit command form
+	commandInputs       []textinput.Model
+	commandInputFocus   int
+	editingCommandIndex int // -1 = add new, >=0 = editing existing
+
+	// Delete command confirmation
+	pendingDeleteCommandIndex int
+	pendingDeleteCommandLabel string
+
 	// File transfer view (browser)
 	transferOutput  string
 	transferRunning bool
 	// Browser: left = local, right = remote
-	transferFocusPanel   int   // 0 = local, 1 = remote
-	transferLocalCwd     string
-	transferRemoteCwd   string
-	transferLocalEntries []transferFileEntry
-	transferRemoteEntries []transferFileEntry
-	transferLocalCursor   int
-	transferRemoteCursor  int
-	transferLocalOffset   int // scroll: first visible index
-	transferRemoteOffset  int
-	transferLocalFilter   string // filter current folder by name
-	transferRemoteFilter  string
-	transferFilterFocused bool
-	transferFilterInput  textinput.Model
+	transferFocusPanel     int // 0 = local, 1 = remote
+	transferLocalCwd       string
+	transferRemoteCwd      string
+	transferLocalEntries   []transferFileEntry
+	transferRemoteEntries  []transferFileEntry
+	transferLocalCursor    int
+	transferRemoteCursor   int
+	transferLocalOffset    int // scroll: first visible index
+	transferRemoteOffset   int
+	transferLocalFilter    string // filter current folder by name
+	transferRemoteFilter   string
+	transferFilterFocused  bool
+	transferFilterInput    textinput.Model
 	transferSelectedLocal  map[string]bool
 	transferSelectedRemote map[string]bool
 	transferRemoteLoading  bool
 	transferInputs         []textinput.Model
 	transferFocus          int
 	// Host→Host mode: 0 = Local↔Host (browser), 1 = Host→Host
-	transferMode            int
-	transferSourceHostIdx   int
-	transferDestHostIdx     int
+	transferMode          int
+	transferSourceHostIdx int
+	transferDestHostIdx   int
 
 	// Import from SSH config view
-	importCandidates []sshconfig.SSHConfigHost
-	importSelected   map[string]bool
-	importCursor     int
-	importErr        string
-	importPath       string
+	importCandidates        []sshconfig.SSHConfigHost
+	importSelected          map[string]bool
+	importCursor            int
+	importErr               string
+	importPath              string
 	transferSourcePathInput textinput.Model
 	transferDestPathInput   textinput.Model
 	transferHostHostFocus   int // 0=source list, 1=source path, 2=dest list, 3=dest path
@@ -146,7 +157,7 @@ type Model struct {
 	// Last SSH connection time per host name (for details panel)
 	lastSSHAt map[string]time.Time
 	// Active SSH count from server (who | wc -l); -1 = unknown/error
-	activeSSHCountByHost   map[string]int
+	activeSSHCountByHost     map[string]int
 	fetchingActiveSSHForHost string
 
 	// Version/update
@@ -274,20 +285,20 @@ func New() Model {
 	runCmdF.CharLimit = 80
 	runCmdF.Width = 40
 	return Model{
-		view:                  ViewHome,
-		keys:                  DefaultKeyMap(),
-		hosts:                 config.GetHosts(),
-		appState:              state.Load(),
-		hostFilter:            f,
-		homeFocus:             0,
-		runCommandFilter:      runCmdF,
-		runCommandFocus:       0,
-		selectedHostNames:     make(map[string]bool),
-		lastSSHAt:             make(map[string]time.Time),
-		activeSSHCountByHost:  make(map[string]int),
-		tabs:                  []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
-		currentTabIndex:       0,
-		nextTabId:             1,
+		view:                 ViewHome,
+		keys:                 DefaultKeyMap(),
+		hosts:                config.GetHosts(),
+		appState:             state.Load(),
+		hostFilter:           f,
+		homeFocus:            0,
+		runCommandFilter:     runCmdF,
+		runCommandFocus:      0,
+		selectedHostNames:    make(map[string]bool),
+		lastSSHAt:            make(map[string]time.Time),
+		activeSSHCountByHost: make(map[string]int),
+		tabs:                 []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
+		currentTabIndex:      0,
+		nextTabId:            1,
 	}
 }
 
@@ -341,6 +352,51 @@ func (m *Model) initEditHostInputs(h config.Host, configIndex int) {
 	m.inputs[7].SetValue(h.ProxyJump)
 	m.inputs[8].SetValue(h.Notes)
 	m.editingHostIndex = configIndex
+}
+
+func (m *Model) initAddCommandInputs() {
+	m.commandInputs = make([]textinput.Model, 2)
+	for i := range m.commandInputs {
+		m.commandInputs[i] = textinput.New()
+		m.commandInputs[i].Prompt = ""
+		m.commandInputs[i].CharLimit = 256
+		m.commandInputs[i].Width = 50
+	}
+	m.commandInputs[0].Placeholder = "e.g. docker logs"
+	m.commandInputs[1].Placeholder = "e.g. docker logs --tail 100 -f"
+	m.commandInputs[0].Focus()
+	m.commandInputFocus = 0
+}
+
+func (m *Model) initEditCommandInputs(cmd config.Command, configIndex int) {
+	m.initAddCommandInputs()
+	m.commandInputs[0].SetValue(cmd.Label)
+	m.commandInputs[1].SetValue(cmd.Command)
+	m.editingCommandIndex = configIndex
+}
+
+func (m *Model) saveCommand() {
+	label := strings.TrimSpace(m.commandInputs[0].Value())
+	command := strings.TrimSpace(m.commandInputs[1].Value())
+	if label == "" || command == "" {
+		m.toast = "Label and Command are required"
+		m.toastSuccess = false
+		m.toastTimer = 50
+		return
+	}
+
+	if m.editingCommandIndex >= 0 {
+		config.UpdateCommand(m.editingCommandIndex, config.Command{Label: label, Command: command})
+		m.toast = fmt.Sprintf("Command '%s' updated", label)
+	} else {
+		config.AddCommand(config.Command{Label: label, Command: command})
+		m.toast = fmt.Sprintf("Command '%s' added", label)
+	}
+	m.toastSuccess = true
+	m.toastTimer = 30
+	m.view = ViewRunCommand
+	m.commandInputs = nil
+	m.editingCommandIndex = -1
 }
 
 func (m *Model) initPortForwardInputs() {
@@ -471,6 +527,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDeleteConfirm(msg)
 		case ViewVersion:
 			return m.updateVersion(msg)
+		case ViewAddCommand:
+			return m.updateAddCommand(msg)
+		case ViewDeleteCommandConfirm:
+			return m.updateDeleteCommandConfirm(msg)
 		}
 
 	case sshOutputMsg:
@@ -681,6 +741,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		// mouse support ready
+		return m.handleMouse(msg)
 
 	case tickMsg:
 		if m.toastTimer > 0 {
@@ -1454,6 +1515,26 @@ func (m Model) updateRunCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "/":
 		m.runCommandFocus = 1
 		return m, m.runCommandFilter.Focus()
+	case msg.String() == "a":
+		m.view = ViewAddCommand
+		m.editingCommandIndex = -1
+		m.initAddCommandInputs()
+		return m, m.commandInputs[0].Focus()
+	case msg.String() == "e":
+		if len(entries) > 0 && m.runCommandCursor < len(entries) {
+			e := entries[m.runCommandCursor]
+			m.view = ViewAddCommand
+			m.initEditCommandInputs(e.Command, e.Index)
+			return m, m.commandInputs[0].Focus()
+		}
+	case msg.String() == "d":
+		if len(entries) > 0 && m.runCommandCursor < len(entries) {
+			e := entries[m.runCommandCursor]
+			m.pendingDeleteCommandIndex = e.Index
+			m.pendingDeleteCommandLabel = e.Command.Label
+			m.view = ViewDeleteCommandConfirm
+			return m, nil
+		}
 	case key.Matches(msg, m.keys.Up):
 		if m.runCommandCursor > 0 {
 			m.runCommandCursor--
@@ -1484,6 +1565,74 @@ func (m Model) updateRunCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	return m, nil
+}
+
+func (m Model) updateAddCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.view = ViewRunCommand
+		m.commandInputs = nil
+		m.editingCommandIndex = -1
+		return m, nil
+	case "enter":
+		if m.commandInputFocus < len(m.commandInputs)-1 {
+			m.commandInputs[m.commandInputFocus].Blur()
+			m.commandInputFocus++
+			return m, m.commandInputs[m.commandInputFocus].Focus()
+		}
+		m.saveCommand()
+		if m.toastTimer > 0 {
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+		}
+		return m, nil
+	case "tab", "down":
+		if m.commandInputFocus < len(m.commandInputs)-1 {
+			m.commandInputs[m.commandInputFocus].Blur()
+			m.commandInputFocus++
+			return m, m.commandInputs[m.commandInputFocus].Focus()
+		}
+		return m, nil
+	case "shift+tab", "up":
+		if m.commandInputFocus > 0 {
+			m.commandInputs[m.commandInputFocus].Blur()
+			m.commandInputFocus--
+			return m, m.commandInputs[m.commandInputFocus].Focus()
+		}
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.commandInputs[m.commandInputFocus], cmd = m.commandInputs[m.commandInputFocus].Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateDeleteCommandConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.pendingDeleteCommandIndex < 0 {
+		m.view = ViewRunCommand
+		m.pendingDeleteCommandLabel = ""
+		return m, nil
+	}
+	switch msg.String() {
+	case "y", "Y", "enter":
+		config.RemoveCommand(m.pendingDeleteCommandIndex)
+		entries := m.filteredCommandEntries()
+		if m.runCommandCursor >= len(entries) && m.runCommandCursor > 0 {
+			m.runCommandCursor--
+		}
+		m.toast = fmt.Sprintf("Command '%s' removed", m.pendingDeleteCommandLabel)
+		m.toastSuccess = true
+		m.toastTimer = 30
+		m.pendingDeleteCommandIndex = -1
+		m.pendingDeleteCommandLabel = ""
+		m.view = ViewRunCommand
+		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+	case "n", "N", "esc":
+		m.pendingDeleteCommandIndex = -1
+		m.pendingDeleteCommandLabel = ""
+		m.view = ViewRunCommand
+		return m, nil
+	}
 	return m, nil
 }
 
@@ -1751,7 +1900,7 @@ func (m Model) updateFileTransfer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, listRemoteCmd(host, parent)
 		}
 		return m, nil
-		case "~":
+	case "~":
 		// Go to local home (when focus is local)
 		if m.transferFocusPanel == 0 {
 			home, _ := os.UserHomeDir()
@@ -2056,6 +2205,10 @@ func (m Model) View() string {
 		body = m.viewDeleteConfirm()
 	case ViewVersion:
 		body = m.viewVersion()
+	case ViewAddCommand:
+		body = m.viewAddCommand()
+	case ViewDeleteCommandConfirm:
+		body = m.viewDeleteCommandConfirm()
 	default:
 		body = m.viewTabContent()
 	}
@@ -2156,7 +2309,7 @@ type activeSSHCountResultMsg struct {
 
 type latestVersionResultMsg struct {
 	Version string // empty if error
-	Err    string
+	Err     string
 }
 
 type updateResultMsg struct {
@@ -2469,7 +2622,6 @@ func (m Model) connectSSH(host config.Host) tea.Cmd {
 	}
 }
 
-
 func (m Model) readSSHOutput(tabId int, session *ssh.Session) tea.Cmd {
 	return func() tea.Msg {
 		if session == nil {
@@ -2614,6 +2766,135 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cur.Session.Write(data)
 	}
 	return m, m.readSSHOutput(cur.Id, cur.Session)
+}
+
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	x, y := msg.X, msg.Y
+	isClick := msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft
+	isWheelUp := msg.Button == tea.MouseButtonWheelUp
+	isWheelDown := msg.Button == tea.MouseButtonWheelDown
+	isWheel := isWheelUp || isWheelDown
+
+	// Tab bar click (row 0): switch tab
+	if isClick && y == 0 && len(m.tabs) > 1 {
+		col := 0
+		for i, t := range m.tabs {
+			title := t.Title
+			if t.Connecting {
+				title += " …"
+			}
+			tabWidth := len(title) + 4
+			if x >= col && x < col+tabWidth {
+				m.currentTabIndex = i
+				if i > 0 && m.tabs[i].Session != nil {
+					return m, m.readSSHOutput(m.tabs[i].Id, m.tabs[i].Session)
+				}
+				return m, nil
+			}
+			col += tabWidth
+		}
+	}
+
+	switch m.view {
+	case ViewHome:
+		if m.currentTabIndex != 0 {
+			return m, nil
+		}
+		entries := m.filteredHostEntries()
+		if isClick {
+			listStartY := 6
+			clicked := y - listStartY
+			if clicked >= 0 && clicked < len(entries) {
+				m.cursor = clicked
+				m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+				return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+			}
+		}
+		if isWheel {
+			if isWheelUp && m.cursor > 0 {
+				m.cursor--
+			} else if isWheelDown && m.cursor < len(entries)-1 {
+				m.cursor++
+			}
+			if len(entries) > 0 && m.cursor < len(entries) {
+				m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+				return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+			}
+		}
+
+	case ViewRunCommand:
+		if m.runCommandOutput != "" || len(m.runCommandMultiResults) > 0 || m.runCommandRunning {
+			return m, nil
+		}
+		entries := m.filteredCommandEntries()
+		if isClick {
+			listStartY := 5
+			if len(m.runCommandHosts) > 1 {
+				listStartY += 2
+			}
+			clicked := y - listStartY
+			if clicked >= 0 && clicked < len(entries) {
+				m.runCommandCursor = clicked
+			}
+		}
+		if isWheel {
+			if isWheelUp && m.runCommandCursor > 0 {
+				m.runCommandCursor--
+			} else if isWheelDown && m.runCommandCursor < len(entries)-1 {
+				m.runCommandCursor++
+			}
+		}
+
+	case ViewFileTransfer:
+		if m.transferOutput != "" || m.transferRunning || m.transferMode == 1 {
+			return m, nil
+		}
+		if isClick {
+			panelW := (m.width - 4) / 2
+			if x < panelW+1 {
+				m.transferFocusPanel = 0
+			} else {
+				m.transferFocusPanel = 1
+			}
+		}
+		if isWheel {
+			if m.transferFocusPanel == 0 {
+				visLocal := filterTransferEntries(m.transferLocalEntries, m.transferLocalFilter)
+				if isWheelUp && m.transferLocalCursor > 0 {
+					m.transferLocalCursor--
+				} else if isWheelDown && m.transferLocalCursor < len(visLocal)-1 {
+					m.transferLocalCursor++
+				}
+			} else {
+				visRemote := filterTransferEntries(m.transferRemoteEntries, m.transferRemoteFilter)
+				if isWheelUp && m.transferRemoteCursor > 0 {
+					m.transferRemoteCursor--
+				} else if isWheelDown && m.transferRemoteCursor < len(visRemote)-1 {
+					m.transferRemoteCursor++
+				}
+			}
+		}
+
+	case ViewImportSSH:
+		if isWheel {
+			if isWheelUp && m.importCursor > 0 {
+				m.importCursor--
+			} else if isWheelDown && m.importCursor < len(m.importCandidates)-1 {
+				m.importCursor++
+			}
+		}
+
+	case ViewPortForward:
+		if isWheel && m.portForwardFocus == 3 {
+			if isWheelUp && m.portForwardCursor > 0 {
+				m.portForwardCursor--
+			} else if isWheelDown && m.portForwardCursor < len(m.activeForwards)-1 {
+				m.portForwardCursor++
+			}
+		}
+	}
+
+	return m, nil
 }
 
 func Run(version string) error {
