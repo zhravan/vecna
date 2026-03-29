@@ -108,12 +108,9 @@ func (m Model) viewHome() string {
 		contentHeight = 10
 	}
 
-	leftWidth := m.width*2/5 - 4
+	leftWidth := HomeHostsPanelWidth(m.width)
 	rightWidth := m.width*3/5 - 4
 
-	if leftWidth < 20 {
-		leftWidth = 20
-	}
 	if rightWidth < 30 {
 		rightWidth = 30
 	}
@@ -553,7 +550,7 @@ func (m Model) viewRunCommand() string {
 			active := i == m.runCommandCursor
 			line := fmt.Sprintf("  %s", c.Label)
 			if active && c.Command != "" {
-				line += styleDim.Render("  → "+c.Command)
+				line += styleDim.Render("  → " + c.Command)
 			}
 			if active {
 				line = " ▸ " + styleListItemSelected.Render(line)
@@ -564,7 +561,7 @@ func (m Model) viewRunCommand() string {
 		}
 	}
 	list := strings.Join(listLines, "\n")
-	panel := stylePanelActive.Width(60).Padding(1, 2).Render(list)
+	panel := stylePanelActive.Width(RunCommandListPanelInnerWidth).Padding(1, 2).Render(list)
 	status := styleStatusBar.Render(
 		keyHint("/", "filter") + "  " +
 			keyHint("↑↓", "nav") + "  " +
@@ -607,7 +604,7 @@ func (m Model) viewAddCommand() string {
 
 	form := strings.Join(fields, "\n\n")
 	panel := stylePanelActive.Width(formWidth).Padding(1, 2).Render(form)
-	hint := styleDim.Render("Tab/↓: next • Shift+Tab/↑: prev • Enter: save • Esc: cancel")
+	hint := styleDim.Render("Tab/↓: next field • Shift+Tab/↑: prev • Enter on last field: save • Esc: cancel")
 
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
