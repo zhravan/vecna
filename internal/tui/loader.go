@@ -22,6 +22,9 @@ var loaderArtColors = []lipgloss.Style{
 	lipgloss.NewStyle().Foreground(colorPurple),
 	lipgloss.NewStyle().Foreground(colorHighlight),
 	lipgloss.NewStyle().Foreground(colorCyan),
+	lipgloss.NewStyle().Foreground(colorGreen),
+	lipgloss.NewStyle().Foreground(colorOrange),
+	lipgloss.NewStyle().Foreground(colorMagenta),
 }
 
 func renderLoader(width, height, frame int, message string) string {

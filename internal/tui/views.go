@@ -100,7 +100,7 @@ func (m Model) viewHome() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
+	logo := renderBrand()
 	header := styleHeader.Render(logo)
 
 	contentHeight := m.height - 6
@@ -135,9 +135,9 @@ func (m Model) viewHome() string {
 }
 
 func (m Model) renderHostsPanel(width, height int) string {
-	title := stylePanelTitle.Render("HOSTS")
+	title := stylePanelTitleHosts.Render("HOSTS")
 	entries := m.filteredHostEntries()
-	filterLine := "Filter: " + m.hostFilter.View()
+	filterLine := styleKey.Render("Filter: ") + m.hostFilter.View()
 
 	var items []string
 	items = append(items, "", filterLine, "")
@@ -198,7 +198,7 @@ func (m Model) renderHostsPanel(width, height int) string {
 }
 
 func (m Model) renderDetailPanel(width, height int) string {
-	title := stylePanelTitle.Render("DETAILS")
+	title := stylePanelTitleDetails.Render("DETAILS")
 	entries := m.filteredHostEntries()
 
 	var content string
@@ -207,22 +207,22 @@ func (m Model) renderDetailPanel(width, height int) string {
 	} else {
 		h := entries[m.cursor].Host
 		lines := []string{
-			fmt.Sprintf("%s  %s", styleKey.Render("Name"), h.Name),
-			fmt.Sprintf("%s  %s", styleKey.Render("Host"), h.Hostname),
-			fmt.Sprintf("%s  %s", styleKey.Render("User"), h.User),
-			fmt.Sprintf("%s  %d", styleKey.Render("Port"), h.Port),
+			fmt.Sprintf("%s  %s", styleKey.Render("Name"), styleDetailValue.Render(h.Name)),
+			fmt.Sprintf("%s  %s", styleKey.Render("Host"), styleDetailValue.Render(h.Hostname)),
+			fmt.Sprintf("%s  %s", styleKey.Render("User"), styleDetailValue.Render(h.User)),
+			fmt.Sprintf("%s  %s", styleKey.Render("Port"), styleDetailValue.Render(fmt.Sprintf("%d", h.Port))),
 		}
 		if h.IdentityFile != "" {
-			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Key "), h.IdentityFile))
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Key "), styleDetailValue.Render(h.IdentityFile)))
 		}
 		if len(h.Tags) > 0 {
-			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Tags"), strings.Join(h.Tags, ", ")))
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Tags"), styleDetailValue.Render(strings.Join(h.Tags, ", "))))
 		}
 		if h.ProxyJump != "" {
-			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Jump"), h.ProxyJump))
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Jump"), styleDetailValue.Render(h.ProxyJump)))
 		}
 		if h.Pinned {
-			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Pinned"), "yes"))
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Pinned"), styleSuccess.Render("yes")))
 		}
 		if strings.TrimSpace(h.Notes) != "" {
 			lines = append(lines, fmt.Sprintf("%s", styleKey.Render("Notes")))
@@ -239,7 +239,7 @@ func (m Model) renderDetailPanel(width, height int) string {
 		} else {
 			activeSSHStr = "—"
 		}
-		lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Active SSH"), activeSSHStr))
+		lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Active SSH"), styleDetailValue.Render(activeSSHStr)))
 		if at, ok := m.lastSSHAt[h.Name]; ok {
 			ago := time.Since(at)
 			var lastStr string
@@ -252,11 +252,11 @@ func (m Model) renderDetailPanel(width, height int) string {
 			} else {
 				lastStr = at.Format("Jan 2 15:04")
 			}
-			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Last SSH "), lastStr))
+			lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Last SSH "), styleDetailValue.Render(lastStr)))
 		}
 
 		lines = append(lines, "")
-		lines = append(lines, stylePanelTitle.Render("ACTIONS"))
+		lines = append(lines, stylePanelTitleActions.Render("ACTIONS"))
 		lines = append(lines, "")
 		lines = append(lines, fmt.Sprintf("  %s  Select (multi-run)", styleKey.Render("space")))
 		lines = append(lines, fmt.Sprintf("  %s  SSH into host", styleKey.Render("c")))
@@ -324,12 +324,12 @@ func (m Model) viewAddHost() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
+	logo := renderBrand()
 	headerLabel := " / Add Host"
 	if m.editingHostIndex >= 0 {
 		headerLabel = " / Edit Host"
 	}
-	header := styleHeader.Render(logo + styleDim.Render(headerLabel))
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(headerLabel))
 
 	formWidth := 50
 	if formWidth > m.width-4 {
@@ -386,8 +386,8 @@ func (m Model) viewDeleteConfirm() string {
 	if m.width == 0 {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Delete Host"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Delete Host"))
 	msg := fmt.Sprintf("Are you sure you want to delete host '%s'?", m.pendingDeleteHostName)
 	panelWidth := 50
 	if panelWidth > m.width-4 {
@@ -411,8 +411,8 @@ func (m Model) viewPortForward() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Port Forward"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Port Forward"))
 
 	formWidth := 50
 	if formWidth > m.width-4 {
@@ -433,7 +433,7 @@ func (m Model) viewPortForward() string {
 
 	panel := stylePanelActive.Width(formWidth).Padding(1, 2).Render(form)
 
-	activeTitle := stylePanelTitle.Render("ACTIVE FORWARDS")
+	activeTitle := stylePanelTitleForwards.Render("ACTIVE FORWARDS")
 	var listLines []string
 	if len(m.activeForwards) == 0 {
 		listLines = append(listLines, styleDim.Render("  None"))
@@ -476,17 +476,17 @@ func (m Model) viewRunCommand() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Run command"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Run command"))
 	commands := config.GetCommands()
 
 	// Multi-host results: show each host's output with a header
 	if len(m.runCommandMultiResults) > 0 {
 		var blocks []string
 		for _, r := range m.runCommandMultiResults {
-			block := "═══ " + r.Host + " ═══"
+			block := styleRunHostHeader.Render("═══ "+r.Host+" ═══")
 			if r.Err != nil {
-				block += " (error)"
+				block += " " + styleError.Render("(error)")
 			}
 			block += "\n" + r.Output
 			blocks = append(blocks, block)
@@ -538,7 +538,7 @@ func (m Model) viewRunCommand() string {
 		listLines = append(listLines, styleDim.Render("  On: "+strings.Join(names, ", ")))
 		listLines = append(listLines, "")
 	}
-	listLines = append(listLines, "", "Filter: "+m.runCommandFilter.View(), "")
+	listLines = append(listLines, "", styleKey.Render("Filter: ")+m.runCommandFilter.View(), "")
 	if len(entries) == 0 {
 		listLines = append(listLines, styleDim.Render("  No commands (type in filter to search)"))
 		if len(commands) == 0 {
@@ -578,12 +578,12 @@ func (m Model) viewAddCommand() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
+	logo := renderBrand()
 	headerLabel := " / Add Command"
 	if m.editingCommandIndex >= 0 {
 		headerLabel = " / Edit Command"
 	}
-	header := styleHeader.Render(logo + styleDim.Render(headerLabel))
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(headerLabel))
 
 	formWidth := 60
 	if formWidth > m.width-4 {
@@ -622,8 +622,8 @@ func (m Model) viewDeleteCommandConfirm() string {
 	if m.width == 0 {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Delete Command"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Delete Command"))
 	msg := fmt.Sprintf("Are you sure you want to delete command '%s'?", m.pendingDeleteCommandLabel)
 	panelWidth := 60
 	if panelWidth > m.width-4 {
@@ -643,8 +643,8 @@ func (m Model) viewDeleteCommandConfirm() string {
 }
 
 func (m Model) viewImportSSH() string {
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Import from SSH config"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Import from SSH config"))
 
 	if m.importErr != "" {
 		msg := styleDim.Render("Could not load ~/.ssh/config: " + m.importErr)
@@ -699,8 +699,8 @@ func (m Model) viewImportSSH() string {
 }
 
 func (m Model) viewVersion() string {
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / Version"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / Version"))
 
 	panelW := 50
 	if panelW > m.width-4 {
@@ -723,7 +723,7 @@ func (m Model) viewVersion() string {
 		fmt.Sprintf("  %s  %s", styleKey.Render("Current"), curVer),
 		fmt.Sprintf("  %s  %s", styleKey.Render("Latest "), latestVer),
 		"",
-		stylePanelTitle.Render("ACTIONS"),
+		stylePanelTitleActions.Render("ACTIONS"),
 		"",
 	}
 	opts := []string{"Update to latest (then restart)", "Switch to version...", "Check for latest"}
@@ -761,8 +761,8 @@ func (m Model) viewFileTransfer() string {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
 	}
 
-	logo := styleLogo.Render("◈ VECNA")
-	header := styleHeader.Render(logo + styleDim.Render(" / File transfer"))
+	logo := renderBrand()
+	header := styleHeader.Render(logo + styleBreadcrumb.Render(" / File transfer"))
 
 	if m.transferOutput != "" {
 		lines := strings.Split(m.transferOutput, "\n")
@@ -829,22 +829,22 @@ func (m Model) viewFileTransfer() string {
 		rightStart = 0
 	}
 
-	leftTitle := " LOCAL "
+	leftTitle := stylePanelTitleLocal.Render(" LOCAL ")
 	if m.transferFocusPanel == 0 {
-		leftTitle = " LOCAL ◀ "
+		leftTitle = stylePanelTitleLocal.Render(" LOCAL ◀ ")
 	}
 	if m.transferLocalFilter != "" {
 		leftTitle += styleDim.Render(" [/" + m.transferLocalFilter + "]")
 	}
-	rightTitle := " REMOTE "
+	rightTitle := stylePanelTitleRemote.Render(" REMOTE ")
 	if m.transferFocusPanel == 1 {
-		rightTitle = " REMOTE ◀ "
+		rightTitle = stylePanelTitleRemote.Render(" REMOTE ◀ ")
 	}
 	if m.transferRemoteFilter != "" {
 		rightTitle += styleDim.Render(" [/" + m.transferRemoteFilter + "]")
 	}
 
-	leftLines := []string{stylePanelTitle.Render(leftTitle), styleDim.Render(m.transferLocalCwd), ""}
+	leftLines := []string{leftTitle, styleDim.Render(m.transferLocalCwd), ""}
 	leftEnd := leftStart + maxRows
 	if leftEnd > len(visLocal) {
 		leftEnd = len(visLocal)
@@ -875,7 +875,7 @@ func (m Model) viewFileTransfer() string {
 	}
 	leftPanel := stylePanel.Width(panelW).Height(maxRows + 3).Render(strings.Join(leftLines, "\n"))
 
-	rightLines := []string{stylePanelTitle.Render(rightTitle), styleDim.Render(m.transferRemoteCwd), ""}
+	rightLines := []string{rightTitle, styleDim.Render(m.transferRemoteCwd), ""}
 	if m.transferRemoteLoading {
 		rightLines = append(rightLines, styleDim.Render("  Loading..."))
 	} else {
@@ -940,7 +940,7 @@ func (m Model) viewFileTransferHostToHost(header string) string {
 	if panelW < 24 {
 		panelW = 24
 	}
-	leftLines := []string{stylePanelTitle.Render(" SOURCE "), ""}
+	leftLines := []string{stylePanelTitleSource.Render(" SOURCE "), ""}
 	for i, h := range hosts {
 		line := "  " + h.Name + "  " + styleDim.Render(fmt.Sprintf("%s@%s", h.User, h.Hostname))
 		if i == m.transferSourceHostIdx {
@@ -955,7 +955,7 @@ func (m Model) viewFileTransferHostToHost(header string) string {
 	if m.transferHostHostFocus == 0 || m.transferHostHostFocus == 1 {
 		leftPanel = stylePanelActive.Width(panelW).Render(strings.Join(leftLines, "\n"))
 	}
-	rightLines := []string{stylePanelTitle.Render(" DEST "), ""}
+	rightLines := []string{stylePanelTitleDest.Render(" DEST "), ""}
 	for i, h := range hosts {
 		line := "  " + h.Name + "  " + styleDim.Render(fmt.Sprintf("%s@%s", h.User, h.Hostname))
 		if i == m.transferDestHostIdx {
@@ -1053,7 +1053,7 @@ func (m Model) viewSSHTab(t tab) string {
 		}
 		screen := strings.Join(lines, "\n")
 		statusBar := styleStatusBar.Render(keyHint("1-9", "tab") + "  " + keyHint("ctrl+←/→", "switch") + "  " + keyHint("esc", "close"))
-		terminalBox := stylePanelActive.
+		terminalBox := stylePanelSSH.
 			Width(termWidth).
 			Height(termHeight).
 			Render(screen)
