@@ -2,6 +2,45 @@ package tui
 
 import "testing"
 
+func TestTabIndexFromPlainDigitKey(t *testing.T) {
+	for _, tt := range []struct {
+		s    string
+		want int
+		ok   bool
+	}{
+		{s: "1", want: 0, ok: true},
+		{s: "9", want: 8, ok: true},
+		{s: "0", want: 0, ok: false},
+		{s: "11", want: 0, ok: false},
+		{s: "alt+1", want: 0, ok: false},
+	} {
+		got, ok := tabIndexFromPlainDigitKey(tt.s)
+		if ok != tt.ok || got != tt.want {
+			t.Errorf("tabIndexFromPlainDigitKey(%q) = (%d, %v), want (%d, %v)", tt.s, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestTabIndexFromAltDigitKey(t *testing.T) {
+	tests := []struct {
+		s    string
+		want int
+		ok   bool
+	}{
+		{s: "alt+1", want: 0, ok: true},
+		{s: "alt+9", want: 8, ok: true},
+		{s: "1", want: 0, ok: false},
+		{s: "alt+0", want: 0, ok: false},
+		{s: "alt+a", want: 0, ok: false},
+	}
+	for _, tt := range tests {
+		got, ok := tabIndexFromAltDigitKey(tt.s)
+		if ok != tt.ok || got != tt.want {
+			t.Errorf("tabIndexFromAltDigitKey(%q) = (%d, %v), want (%d, %v)", tt.s, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestParseKittySuperDigitTab(t *testing.T) {
 	tests := []struct {
 		seq  string

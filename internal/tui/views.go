@@ -49,7 +49,9 @@ func stripANSI(s string) string {
 	i := 0
 	for i < len(s) {
 		if s[i] != 0x1b {
-			b.WriteByte(s[i])
+			if s[i] != 0x07 {
+				b.WriteByte(s[i])
+			}
 			i++
 			continue
 		}
@@ -93,6 +95,12 @@ func stripANSI(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// stripTTYBell removes ASCII BEL (0x07). Writing BEL to the terminal rings the bell;
+// SSH/shell output and prompts often include it, so each redraw after a keystroke can beep.
+func stripTTYBell(s string) string {
+	return strings.ReplaceAll(s, "\x07", "")
 }
 
 func (m Model) viewHome() string {
@@ -282,8 +290,9 @@ func (m Model) renderDetailPanel(width, height int) string {
 
 func (m Model) renderStatusBar() string {
 	keys := []string{
-		keyHint("ctrl+←/→", "tab"),
-		keyHint("cmd/Win+1-9", "if "+EnvKittyKeyboard+"=1"),
+		keyHint("1-9", "tab on list"),
+		keyHint("alt+1-9", "tab from SSH"),
+		keyHint("ctrl+←/→", "cycle tab"),
 		keyHint("/", "filter"),
 		keyHint("space", "select"),
 		keyHint("↑↓", "nav"),
@@ -1052,7 +1061,7 @@ func (m Model) viewSSHTab(t tab) string {
 			lines = lines[len(lines)-termHeight:]
 		}
 		screen := strings.Join(lines, "\n")
-		statusBar := styleStatusBar.Render(keyHint("ctrl+←/→", "tab") + "  " + keyHint("cmd/Win+1-9", "if "+EnvKittyKeyboard+"=1") + "  " + keyHint("esc", "close"))
+		statusBar := styleStatusBar.Render(keyHint("alt+1-9", "jump tab") + "  " + keyHint("ctrl+←/→", "cycle") + "  " + keyHint("esc", "close"))
 		terminalBox := stylePanelSSH.
 			Width(termWidth).
 			Height(termHeight).

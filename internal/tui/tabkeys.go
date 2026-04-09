@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -41,6 +42,35 @@ func tabIndexFromKittyUnknownCSI(msg tea.Msg) (idx int, ok bool) {
 		return 0, false
 	}
 	return parseKittySuperDigitTab(v.Bytes())
+}
+
+// tabIndexFromPlainDigitKey matches a lone digit "1"–"9" (no modifiers).
+func tabIndexFromPlainDigitKey(s string) (idx int, ok bool) {
+	if len(s) != 1 {
+		return 0, false
+	}
+	c := s[0]
+	if c < '1' || c > '9' {
+		return 0, false
+	}
+	return int(c - '1'), true
+}
+
+// tabIndexFromAltDigitKey parses Bubble Tea's "alt+1"–"alt+9" (Option+digit on macOS / Alt+digit elsewhere).
+func tabIndexFromAltDigitKey(s string) (idx int, ok bool) {
+	const prefix = "alt+"
+	if !strings.HasPrefix(s, prefix) {
+		return 0, false
+	}
+	key := strings.TrimPrefix(s, prefix)
+	if len(key) != 1 {
+		return 0, false
+	}
+	c := key[0]
+	if c < '1' || c > '9' {
+		return 0, false
+	}
+	return int(c - '1'), true
 }
 
 func parseKittySuperDigitTab(b []byte) (idx int, ok bool) {

@@ -487,7 +487,7 @@ func (m Model) switchToTabByIndex(idx int) (Model, tea.Cmd) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Cmd/Win+1–9: kitty-style CSI u (see tabkeys.go); plain digits do not switch tabs.
+	// Optional: Cmd/Win+digit as CSI u when VECNA_KITTY_KEYBOARD=1 (see tabkeys.go).
 	if m.view == ViewHome {
 		if idx, ok := tabIndexFromKittyUnknownCSI(msg); ok {
 			return m.switchToTabByIndex(idx)
@@ -497,6 +497,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch m.view {
 		case ViewHome:
+			// SSH tab: Alt/Option+digit jumps tabs (digits alone go to the remote shell).
+			if m.currentTabIndex > 0 {
+				if idx, ok := tabIndexFromAltDigitKey(msg.String()); ok {
+					return m.switchToTabByIndex(idx)
+				}
+			}
+			// Host list with focus on the list (not / filter): 1–9 jumps tabs like a browser.
+			if m.currentTabIndex == 0 && m.homeFocus == 0 {
+				if idx, ok := tabIndexFromPlainDigitKey(msg.String()); ok {
+					return m.switchToTabByIndex(idx)
+				}
+			}
 			switch msg.String() {
 			case "ctrl+right":
 				if len(m.tabs) > 1 && m.currentTabIndex < len(m.tabs)-1 {
@@ -2230,7 +2242,7 @@ func (m Model) View() string {
 			full = strings.Join(lines, "\n")
 		}
 	}
-	return full
+	return stripTTYBell(full)
 }
 
 type sshOutputMsg struct {
