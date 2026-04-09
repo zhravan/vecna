@@ -282,8 +282,8 @@ func (m Model) renderDetailPanel(width, height int) string {
 
 func (m Model) renderStatusBar() string {
 	keys := []string{
-		keyHint("1-9", "tab"),
-		keyHint("ctrl+←/→", "switch"),
+		keyHint("ctrl+←/→", "tab"),
+		keyHint("cmd/Win+1-9", "if "+EnvKittyKeyboard+"=1"),
 		keyHint("/", "filter"),
 		keyHint("space", "select"),
 		keyHint("↑↓", "nav"),
@@ -1052,7 +1052,7 @@ func (m Model) viewSSHTab(t tab) string {
 			lines = lines[len(lines)-termHeight:]
 		}
 		screen := strings.Join(lines, "\n")
-		statusBar := styleStatusBar.Render(keyHint("1-9", "tab") + "  " + keyHint("ctrl+←/→", "switch") + "  " + keyHint("esc", "close"))
+		statusBar := styleStatusBar.Render(keyHint("ctrl+←/→", "tab") + "  " + keyHint("cmd/Win+1-9", "if "+EnvKittyKeyboard+"=1") + "  " + keyHint("esc", "close"))
 		terminalBox := stylePanelSSH.
 			Width(termWidth).
 			Height(termHeight).

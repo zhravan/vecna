@@ -466,30 +466,38 @@ func (m Model) Init() tea.Cmd {
 	return tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg { return animTickMsg{} })
 }
 
+// switchToTabByIndex selects tab idx (0 = Hosts). No-op if idx is out of range.
+func (m Model) switchToTabByIndex(idx int) (Model, tea.Cmd) {
+	if idx < 0 || idx >= len(m.tabs) {
+		return m, nil
+	}
+	m.currentTabIndex = idx
+	if idx == 0 {
+		entries := m.filteredHostEntries()
+		if len(entries) > 0 && m.cursor < len(entries) {
+			m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
+			return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
+		}
+		return m, nil
+	}
+	if t := &m.tabs[m.currentTabIndex]; t.Session != nil {
+		return m, m.readSSHOutput(t.Id, t.Session)
+	}
+	return m, nil
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Cmd/Win+1–9: kitty-style CSI u (see tabkeys.go); plain digits do not switch tabs.
+	if m.view == ViewHome {
+		if idx, ok := tabIndexFromKittyUnknownCSI(msg); ok {
+			return m.switchToTabByIndex(idx)
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch m.view {
 		case ViewHome:
-			// Tab switching: 1=Hosts, 2=first SSH, 3=second SSH, ...; Ctrl+Left/Right
 			switch msg.String() {
-			case "1":
-				m.currentTabIndex = 0
-				entries := m.filteredHostEntries()
-				if len(entries) > 0 && m.cursor < len(entries) {
-					m.fetchingActiveSSHForHost = entries[m.cursor].Host.Name
-					return m, fetchActiveSSHCountCmd(entries[m.cursor].Host)
-				}
-				return m, nil
-			case "2", "3", "4", "5", "6", "7", "8", "9":
-				idx := int(msg.String()[0] - '1') // 1->0, 2->1, 3->2, ...
-				if idx < len(m.tabs) {
-					m.currentTabIndex = idx
-					if t := &m.tabs[m.currentTabIndex]; t.Session != nil {
-						return m, m.readSSHOutput(t.Id, t.Session)
-					}
-				}
-				return m, nil
 			case "ctrl+right":
 				if len(m.tabs) > 1 && m.currentTabIndex < len(m.tabs)-1 {
 					m.currentTabIndex++
@@ -2771,6 +2779,11 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func Run(version string) error {
 	m := New()
 	m.version = version
+	if os.Getenv(EnvKittyKeyboard) == "1" {
+		_, _ = os.Stdout.WriteString(kittyKeyboardPushFlags)
+		defer func() { _, _ = os.Stdout.WriteString(kittyKeyboardPop) }()
+	}
+
 	p := tea.NewProgram(
 		m,
 		tea.WithAltScreen(),
