@@ -1,9 +1,12 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
-	colorBg        = lipgloss.Color("#1a1b26")
 	colorFg        = lipgloss.Color("#c0caf5")
 	colorSubtle    = lipgloss.Color("#565f89")
 	colorHighlight = lipgloss.Color("#7aa2f7")
@@ -12,6 +15,16 @@ var (
 	colorYellow    = lipgloss.Color("#e0af68")
 	colorCyan      = lipgloss.Color("#7dcfff")
 	colorPurple    = lipgloss.Color("#bb9af7")
+	colorOrange    = lipgloss.Color("#ff9e64")
+	colorTeal      = lipgloss.Color("#73daca")
+	colorMagenta   = lipgloss.Color("#ff007c")
+	colorSurface   = lipgloss.Color("#24283b")
+	colorBorderDim = lipgloss.Color("#3b4261")
+
+	// brandLetterColors cycles across "◈ VECNA" for a richer header.
+	brandLetterColors = []lipgloss.Color{
+		colorPurple, colorHighlight, colorCyan, colorGreen, colorYellow, colorOrange,
+	}
 
 	baseBorder = lipgloss.Border{
 		Top:         "─",
@@ -24,20 +37,13 @@ var (
 		BottomRight: "╯",
 	}
 
-	styleApp = lipgloss.NewStyle()
-
+	// Header wraps the brand; brand carries its own per-rune colors.
 	styleHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorHighlight).
 			Padding(0, 1)
-
-	styleLogo = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorPurple)
 
 	stylePanel = lipgloss.NewStyle().
 			Border(baseBorder).
-			BorderForeground(colorSubtle).
+			BorderForeground(colorBorderDim).
 			Padding(0, 1)
 
 	stylePanelActive = lipgloss.NewStyle().
@@ -45,9 +51,54 @@ var (
 				BorderForeground(colorHighlight).
 				Padding(0, 1)
 
-	stylePanelTitle = lipgloss.NewStyle().
+	// SSH session output: teal border to distinguish from generic panels.
+	stylePanelSSH = lipgloss.NewStyle().
+			Border(baseBorder).
+			BorderForeground(colorTeal).
+			Padding(0, 1)
+
+	stylePanelTitleHosts = lipgloss.NewStyle().
+				Foreground(colorCyan).
+				Bold(true)
+
+	stylePanelTitleDetails = lipgloss.NewStyle().
+				Foreground(colorPurple).
+				Bold(true)
+
+	stylePanelTitleActions = lipgloss.NewStyle().
+				Foreground(colorYellow).
+				Bold(true)
+
+	stylePanelTitleForwards = lipgloss.NewStyle().
+				Foreground(colorTeal).
+				Bold(true)
+
+	stylePanelTitleLocal = lipgloss.NewStyle().
+				Foreground(colorCyan).
+				Bold(true)
+
+	stylePanelTitleRemote = lipgloss.NewStyle().
+				Foreground(colorOrange).
+				Bold(true)
+
+	stylePanelTitleSource = lipgloss.NewStyle().
+				Foreground(colorGreen).
+				Bold(true)
+
+	stylePanelTitleDest = lipgloss.NewStyle().
+				Foreground(colorMagenta).
+				Bold(true)
+
+	styleBreadcrumb = lipgloss.NewStyle().
 			Foreground(colorSubtle).
+			Italic(true)
+
+	styleRunHostHeader = lipgloss.NewStyle().
+			Foreground(colorMagenta).
 			Bold(true)
+
+	styleDetailValue = lipgloss.NewStyle().
+			Foreground(colorTeal)
 
 	styleListItem = lipgloss.NewStyle().
 			Foreground(colorFg)
@@ -66,7 +117,11 @@ var (
 				Foreground(colorRed)
 
 	styleStatusBar = lipgloss.NewStyle().
+			Background(colorSurface).
 			Foreground(colorSubtle).
+			BorderTop(true).
+			BorderStyle(lipgloss.Border{Top: "─"}).
+			BorderForeground(colorPurple).
 			Padding(0, 1)
 
 	styleKey = lipgloss.NewStyle().
@@ -74,7 +129,7 @@ var (
 			Bold(true)
 
 	styleKeyDesc = lipgloss.NewStyle().
-			Foreground(colorSubtle)
+			Foreground(lipgloss.AdaptiveColor{Light: "#565f89", Dark: "#a9b1d6"})
 
 	styleInputLabel = lipgloss.NewStyle().
 			Foreground(colorHighlight).
@@ -117,15 +172,32 @@ var (
 			Foreground(colorSubtle).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder(), false, false, true, false).
-			BorderForeground(colorSubtle)
+			BorderForeground(colorBorderDim)
 
 	styleTabActive = lipgloss.NewStyle().
-			Foreground(colorHighlight).
+			Foreground(colorCyan).
 			Bold(true).
+			Background(colorSurface).
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder(), false, false, true, false).
 			BorderForeground(colorHighlight)
 )
+
+// renderBrand returns "◈ VECNA" with cycling accent colors (Tokyo Night–style palette).
+func renderBrand() string {
+	const text = "◈ VECNA"
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(text) * 12)
+	for i, r := range runes {
+		c := brandLetterColors[i%len(brandLetterColors)]
+		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(c).Render(string(r)))
+	}
+	return b.String()
+}
 
 func keyHint(k, desc string) string {
 	return styleKey.Render(k) + styleKeyDesc.Render(":"+desc)
