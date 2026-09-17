@@ -2,13 +2,24 @@ package ssh
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
 func loadPrivateKey(path string) (ssh.Signer, error) {
-	return loadPrivateKeyFile(path)
+	home, _ := os.UserHomeDir()
+	if strings.HasPrefix(path, "~") {
+		path = filepath.Join(home, strings.TrimLeft(path[1:], `/\\`))
+	}
+	key, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.ParsePrivateKey(key)
 }
 
 func ValidateConnection(host Host, password string) error {
@@ -58,8 +69,4 @@ func ValidateConnection(host Host, password string) error {
 	}
 
 	return nil
-}
-
-func loadPrivateKeyFile(path string) (ssh.Signer, error) {
-	return loadPrivateKeyFromPath(path)
 }
