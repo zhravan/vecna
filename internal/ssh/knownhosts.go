@@ -27,12 +27,12 @@ func (e *UnknownHostKeyError) Error() string {
 }
 
 type ChangedHostKeyError struct {
-	Host               string
-	Fingerprint        string
-	Algorithm          string
-	Key                ssh.PublicKey
+	Host                 string
+	Fingerprint          string
+	Algorithm            string
+	Key                  ssh.PublicKey
 	PreviousFingerprints []string
-	Cause              error
+	Cause                error
 }
 
 func (e *ChangedHostKeyError) Error() string {
@@ -101,12 +101,12 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 					}
 				}
 				return &ChangedHostKeyError{
-					Host:                hostname,
-					Fingerprint:         fingerprint,
-					Algorithm:           key.Type(),
-					Key:                 key,
+					Host:                 hostname,
+					Fingerprint:          fingerprint,
+					Algorithm:            key.Type(),
+					Key:                  key,
 					PreviousFingerprints: previous,
-					Cause:               err,
+					Cause:                err,
 				}
 			}
 			return err
