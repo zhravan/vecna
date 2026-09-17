@@ -11,10 +11,10 @@ import (
 
 // RetryPolicy controls transient SSH/network retry behavior.
 type RetryPolicy struct {
-	Attempts   int
-	BaseDelay  time.Duration
-	MaxDelay   time.Duration
-	Jitter     time.Duration
+	Attempts  int
+	BaseDelay time.Duration
+	MaxDelay  time.Duration
+	Jitter    time.Duration
 }
 
 func DefaultRetryPolicy() RetryPolicy {
@@ -43,8 +43,8 @@ func Retry(ctx context.Context, policy RetryPolicy, fn func() error) error {
 			return nil
 		} else {
 			last = err
-			var unknown UnknownHostKeyError
-			var changed ChangedHostKeyError
+			var unknown *UnknownHostKeyError
+			var changed *ChangedHostKeyError
 			if errors.As(err, &unknown) || errors.As(err, &changed) || !isTransient(err) {
 				return err
 			}
