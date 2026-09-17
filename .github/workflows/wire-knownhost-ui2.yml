@@ -19,6 +19,8 @@ jobs:
           fetch-depth: 0
       - name: Apply and test
         run: |
+          git fetch origin feat/security-known-hosts
+          git reset --hard origin/feat/security-known-hosts
           python3 scripts/patch_knownhost_ui.py
           gofmt -w internal/tui/tui.go internal/tui/knownhost_ui.go internal/ssh/knownhosts.go
           go test ./...
@@ -27,6 +29,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add internal/tui/tui.go internal/tui/knownhost_ui.go internal/ssh/knownhosts.go
-          git rm scripts/patch_knownhost_ui.py .github/workflows/wire-knownhost-ui.yml .github/workflows/wire-knownhost-ui2.yml
+          git rm scripts/patch_knownhost_ui.py .github/workflows/wire-knownhost-ui2.yml
           git commit -m "feat(security): wire host key trust flow"
-          git push origin HEAD:feat/security-known-hosts
+          git fetch origin feat/security-known-hosts
+          git push --force-with-lease=refs/heads/feat/security-known-hosts:$(git rev-parse origin/feat/security-known-hosts) origin HEAD:feat/security-known-hosts
