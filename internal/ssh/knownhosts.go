@@ -15,7 +15,6 @@ import (
 
 var errHostKeyProbe = errors.New("vecna: host key probe complete")
 
-// UnknownHostKeyError is returned when a server is not yet present in known_hosts.
 type UnknownHostKeyError struct {
 	Host        string
 	Fingerprint string
@@ -27,13 +26,13 @@ func (e *UnknownHostKeyError) Error() string {
 	return fmt.Sprintf("unknown SSH host key for %s (fingerprint %s)", e.Host, e.Fingerprint)
 }
 
-// ChangedHostKeyError is returned when a known server presents a different key.
 type ChangedHostKeyError struct {
-	Host        string
-	Fingerprint string
-	Algorithm   string
-	Key         ssh.PublicKey
-	Cause       error
+	Host               string
+	Fingerprint        string
+	Algorithm          string
+	Key                ssh.PublicKey
+	PreviousFingerprints []string
+	Cause              error
 }
 
 func (e *ChangedHostKeyError) Error() string {
@@ -42,9 +41,7 @@ func (e *ChangedHostKeyError) Error() string {
 
 func (e *ChangedHostKeyError) Unwrap() error { return e.Cause }
 
-var (
-	probeMu sync.Mutex
-)
+var probeMu sync.Mutex
 
 func KnownHostsPath() string {
 	home, err := os.UserHomeDir()
@@ -74,8 +71,6 @@ func ensureKnownHostsFile() (string, error) {
 	return path, nil
 }
 
-// HostKeyCallback returns a strict OpenSSH known_hosts callback. Unknown keys are
-// surfaced as UnknownHostKeyError so the UI can ask the user for confirmation.
 func HostKeyCallback() (ssh.HostKeyCallback, error) {
 	path, err := ensureKnownHostsFile()
 	if err != nil {
@@ -99,12 +94,19 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 						Key:         key,
 					}
 				}
+				previous := make([]string, 0, len(keyErr.Want))
+				for _, want := range keyErr.Want {
+					if want.Key != nil {
+						previous = append(previous, ssh.FingerprintSHA256(want.Key))
+					}
+				}
 				return &ChangedHostKeyError{
-					Host:        hostname,
-					Fingerprint: fingerprint,
-					Algorithm:   key.Type(),
-					Key:         key,
-					Cause:       err,
+					Host:                hostname,
+					Fingerprint:         fingerprint,
+					Algorithm:           key.Type(),
+					Key:                 key,
+					PreviousFingerprints: previous,
+					Cause:               err,
 				}
 			}
 			return err
@@ -113,8 +115,6 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 	}, nil
 }
 
-// TrustHostKey appends a verified key to the user's OpenSSH known_hosts file.
-// The caller must obtain explicit user confirmation before calling this function.
 func TrustHostKey(host string, key ssh.PublicKey) error {
 	if key == nil {
 		return fmt.Errorf("cannot trust empty host key")
@@ -135,8 +135,6 @@ func TrustHostKey(host string, key ssh.PublicKey) error {
 	return nil
 }
 
-// ProbeHostKey performs only the SSH handshake needed to retrieve the server's
-// presented host key. It deliberately does not authenticate or execute commands.
 func ProbeHostKey(host Host) (fingerprint, algorithm string, key ssh.PublicKey, err error) {
 	probeMu.Lock()
 	defer probeMu.Unlock()
