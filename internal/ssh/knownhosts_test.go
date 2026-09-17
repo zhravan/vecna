@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,11 @@ func TestTrustHostKeyWritesOpenSSHEntry(t *testing.T) {
 	}
 	t.Setenv("HOME", home)
 
-	key, err := ssh.NewPublicKey(&testSignerPublicKey{})
+	_, private, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(private.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,9 +46,3 @@ func TestTrustHostKeyWritesOpenSSHEntry(t *testing.T) {
 		t.Fatal("expected known_hosts entry")
 	}
 }
-
-// testSignerPublicKey is only used to produce a deterministic ssh.PublicKey in tests.
-type testSignerPublicKey struct{}
-
-func (*testSignerPublicKey) Type() string { return "ssh-ed25519" }
-func (*testSignerPublicKey) Marshal() []byte { return []byte{0, 0, 0, 11, 's', 's', 'h', '-', 'e', 'd', '2', '5', '5', '1', '9', 0, 0, 0, 0} }
