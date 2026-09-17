@@ -11,240 +11,68 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type Session struct {
-	client   *ssh.Client
-	session *ssh.Session
-	stdin   io.WriteCloser
-	stdout  io.Reader
-	stderr  io.Reader
-}
+type Session struct { client *ssh.Client; session *ssh.Session; stdin io.WriteCloser; stdout io.Reader; stderr io.Reader }
 
-// Connect establishes an SSH session to h. If jumpHost is not nil, connects via that host as proxy.
-// Host keys are always verified against the user's OpenSSH known_hosts file.
 func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool) (*Session, error) {
-	var client *ssh.Client
-	var err error
-	if jumpHost != nil {
-		client, err = DialClientViaProxy(h, password, skipKeyIfNotDeployed, *jumpHost, jumpPassword, jumpSkipKey)
-	} else {
-		client, err = DialClient(h, password, skipKeyIfNotDeployed)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("failed to create session: %w", err)
-	}
-
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
-	}
-
-	term := os.Getenv("TERM")
-	if term == "" {
-		term = "xterm-256color"
-	}
-
-	if err := session.RequestPty(term, 80, 24, modes); err != nil {
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("failed to request pty: %w", err)
-	}
-
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("failed to get stdin: %w", err)
-	}
-
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		stdin.Close()
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("failed to get stdout: %w", err)
-	}
-
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		stdin.Close()
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("failed to get stderr: %w", err)
-	}
-
-	if err := session.Start("bash --norc --noprofile -i"); err != nil {
-		stdin.Close()
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("failed to start shell: %w", err)
-	}
-
-	return &Session{
-		client:   client,
-		session: session,
-		stdin:    stdin,
-		stdout:  stdout,
-		stderr:  stderr,
-	}, nil
+	var client *ssh.Client; var err error
+	if jumpHost != nil { client, err = DialClientViaProxy(h, password, skipKeyIfNotDeployed, *jumpHost, jumpPassword, jumpSkipKey) } else { client, err = DialClient(h, password, skipKeyIfNotDeployed) }
+	if err != nil { return nil, err }
+	session, err := client.NewSession(); if err != nil { client.Close(); return nil, fmt.Errorf("failed to create session: %w", err) }
+	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}
+	term := os.Getenv("TERM"); if term == "" { term = "xterm-256color" }
+	if err := session.RequestPty(term, 80, 24, modes); err != nil { session.Close(); client.Close(); return nil, fmt.Errorf("failed to request pty: %w", err) }
+	stdin, err := session.StdinPipe(); if err != nil { session.Close(); client.Close(); return nil, fmt.Errorf("failed to get stdin: %w", err) }
+	stdout, err := session.StdoutPipe(); if err != nil { stdin.Close(); session.Close(); client.Close(); return nil, fmt.Errorf("failed to get stdout: %w", err) }
+	stderr, err := session.StderrPipe(); if err != nil { stdin.Close(); session.Close(); client.Close(); return nil, fmt.Errorf("failed to get stderr: %w", err) }
+	if err := session.Start("bash --norc --noprofile -i"); err != nil { stdin.Close(); session.Close(); client.Close(); return nil, fmt.Errorf("failed to start shell: %w", err) }
+	return &Session{client: client, session: session, stdin: stdin, stdout: stdout, stderr: stderr}, nil
 }
 
-// DialClient establishes an SSH connection without starting a session. Used for port forwarding.
-func DialClient(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Client, error) {
-	return dialClient(h, password, skipKeyIfNotDeployed, nil, "")
-}
-
-// dialClient connects to h, optionally via proxyClient (jump host).
+func DialClient(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Client, error) { return dialClient(h, password, skipKeyIfNotDeployed, nil, "") }
 func dialClient(h Host, password string, skipKeyIfNotDeployed bool, proxyClient *ssh.Client, _ string) (*ssh.Client, error) {
-	config, err := buildSSHConfig(h, password, skipKeyIfNotDeployed)
-	if err != nil {
-		return nil, err
-	}
+	config, err := buildSSHConfig(h, password, skipKeyIfNotDeployed); if err != nil { return nil, err }
 	addr := fmt.Sprintf("%s:%d", h.Hostname, h.Port)
-
-	if proxyClient == nil {
-		client, err := ssh.Dial("tcp", addr, config)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial: %w", err)
-		}
-		return client, nil
-	}
-
-	conn, err := proxyClient.Dial("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial target via proxy: %w", err)
-	}
-	clientConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to establish SSH to target: %w", err)
-	}
+	if proxyClient == nil { client, err := ssh.Dial("tcp", addr, config); if err != nil { return nil, fmt.Errorf("failed to dial: %w", err) }; return client, nil }
+	conn, err := proxyClient.Dial("tcp", addr); if err != nil { return nil, fmt.Errorf("failed to dial target via proxy: %w", err) }
+	clientConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config); if err != nil { conn.Close(); return nil, fmt.Errorf("failed to establish SSH to target: %w", err) }
 	return ssh.NewClient(clientConn, chans, reqs), nil
 }
 
-// DialClientViaProxy connects to targetHost through jumpHost (bastion). Both use their own auth.
 func DialClientViaProxy(targetHost Host, targetPassword string, targetSkipKey bool, jumpHost Host, jumpPassword string, jumpSkipKey bool) (*ssh.Client, error) {
-	jumpClient, err := DialClient(jumpHost, jumpPassword, jumpSkipKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to jump host: %w", err)
-	}
-	client, err := dialClient(targetHost, targetPassword, targetSkipKey, jumpClient, jumpPassword)
-	if err != nil {
-		jumpClient.Close()
-		return nil, err
-	}
+	jumpClient, err := DialClient(jumpHost, jumpPassword, jumpSkipKey); if err != nil { return nil, fmt.Errorf("failed to connect to jump host: %w", err) }
+	client, err := dialClient(targetHost, targetPassword, targetSkipKey, jumpClient, jumpPassword); if err != nil { jumpClient.Close(); return nil, err }
 	return client, nil
 }
 
-// RunCommand connects to the host (optionally via jump), runs the command once, and returns combined stdout and stderr.
+// DialClientViaProxyManaged keeps the bastion lifecycle attached to the target.
+type ManagedClient struct { *ssh.Client; cleanup func() }
+func DialClientViaProxyManaged(targetHost Host, targetPassword string, targetSkipKey bool, jumpHost Host, jumpPassword string, jumpSkipKey bool) (*ManagedClient, error) {
+	jumpClient, err := DialClient(jumpHost, jumpPassword, jumpSkipKey); if err != nil { return nil, fmt.Errorf("failed to connect to jump host: %w", err) }
+	client, err := dialClient(targetHost, targetPassword, targetSkipKey, jumpClient, jumpPassword); if err != nil { jumpClient.Close(); return nil, err }
+	return &ManagedClient{Client: client, cleanup: func(){ _ = jumpClient.Close() }}, nil
+}
+func (c *ManagedClient) Close() error { err := c.Client.Close(); if c.cleanup != nil { c.cleanup(); c.cleanup = nil }; return err }
+
 func RunCommand(h Host, password string, skipKey bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool, command string) (output string, err error) {
-	var client *ssh.Client
-	if jumpHost != nil {
-		client, err = DialClientViaProxy(h, password, skipKey, *jumpHost, jumpPassword, jumpSkipKey)
-	} else {
-		client, err = DialClient(h, password, skipKey)
-	}
-	if err != nil {
-		return "", err
-	}
-	defer client.Close()
-	session, err := client.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer session.Close()
-	out, err := session.CombinedOutput(command)
-	return string(out), err
+	var client *ssh.Client; if jumpHost != nil { client, err = DialClientViaProxy(h, password, skipKey, *jumpHost, jumpPassword, jumpSkipKey) } else { client, err = DialClient(h, password, skipKey) }; if err != nil { return "", err }; defer client.Close()
+	session, err := client.NewSession(); if err != nil { return "", err }; defer session.Close(); out, err := session.CombinedOutput(command); return string(out), err
 }
-
-func (s *Session) Resize(width, height int) error {
-	return s.session.WindowChange(height, width)
-}
-
-func (s *Session) Write(data []byte) (int, error) {
-	return s.stdin.Write(data)
-}
-
-func (s *Session) Read(p []byte) (int, error) {
-	return s.stdout.Read(p)
-}
-
-func (s *Session) ReadError(p []byte) (int, error) {
-	return s.stderr.Read(p)
-}
-
-func (s *Session) Close() error {
-	if s.stdin != nil {
-		s.stdin.Close()
-	}
-	if s.session != nil {
-		s.session.Close()
-	}
-	if s.client != nil {
-		return s.client.Close()
-	}
-	return nil
-}
+func (s *Session) Resize(width, height int) error { return s.session.WindowChange(height, width) }
+func (s *Session) Write(data []byte) (int, error) { return s.stdin.Write(data) }
+func (s *Session) Read(p []byte) (int, error) { return s.stdout.Read(p) }
+func (s *Session) ReadError(p []byte) (int, error) { return s.stderr.Read(p) }
+func (s *Session) Close() error { if s.stdin != nil { s.stdin.Close() }; if s.session != nil { s.session.Close() }; if s.client != nil { return s.client.Close() }; return nil }
 
 func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.ClientConfig, error) {
-	home, _ := os.UserHomeDir()
-	expandPath := func(p string) string {
-		if strings.HasPrefix(p, "~") {
-			rest := strings.TrimLeft(p[1:], `/\\`)
-			return filepath.Join(home, rest)
-		}
-		return p
-	}
-
-	var authMethods []ssh.AuthMethod
-	keyAdded := false
-	if h.IdentityFile != "" && !skipKeyIfNotDeployed {
-		keyPath := expandPath(h.IdentityFile)
-		key, err := os.ReadFile(keyPath)
-		if err == nil {
-			signer, err := ssh.ParsePrivateKey(key)
-			if err == nil {
-				authMethods = append(authMethods, ssh.PublicKeys(signer))
-				keyAdded = true
-			}
-		}
-	}
-
-	if password != "" {
-		if keyAdded {
-			authMethods = append(authMethods, ssh.Password(password))
-		} else {
-			authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...)
-		}
-	}
-
-	if len(authMethods) == 0 {
-		return nil, fmt.Errorf("no authentication method available (need password or key path)")
-	}
-
-	hostKeyCallback, err := HostKeyCallback()
-	if err != nil {
-		return nil, err
-	}
-
-	return &ssh.ClientConfig{
-		User:            h.User,
-		Auth:            authMethods,
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         5 * time.Second,
-	}, nil
+	home, _ := os.UserHomeDir(); expandPath := func(p string) string { if strings.HasPrefix(p, "~") { rest := strings.TrimLeft(p[1:], `/\\`); return filepath.Join(home, rest) }; return p }
+	var authMethods []ssh.AuthMethod; keyAdded := false
+	if h.IdentityFile != "" && !skipKeyIfNotDeployed { keyPath := expandPath(h.IdentityFile); key, err := os.ReadFile(keyPath); if err == nil { signer, err := ssh.ParsePrivateKey(key); if err == nil { authMethods = append(authMethods, ssh.PublicKeys(signer)); keyAdded = true } } }
+	if h.UseAgent { if agentAuth, closeAgent, err := AgentAuth(); err == nil { authMethods = append(authMethods, agentAuth); _ = closeAgent() } }
+	if password != "" { if keyAdded { authMethods = append(authMethods, ssh.Password(password)) } else { authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...) } }
+	if len(authMethods) == 0 { return nil, fmt.Errorf("no authentication method available (need password, key path, or SSH agent)") }
+	hostKeyCallback, err := HostKeyCallback(); if err != nil { return nil, err }
+	timeout := 5 * time.Second; if h.ConnectTimeoutSeconds > 0 { timeout = time.Duration(h.ConnectTimeoutSeconds) * time.Second }
+	return &ssh.ClientConfig{User: h.User, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: timeout}, nil
 }
 
-type Host struct {
-	Name         string
-	Hostname     string
-	User         string
-	Port         int
-	IdentityFile string
-}
+type Host struct { Name string; Hostname string; User string; Port int; IdentityFile string; UseAgent bool; ConnectTimeoutSeconds int; KeepAliveSeconds int }
