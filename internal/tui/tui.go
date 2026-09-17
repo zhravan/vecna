@@ -38,6 +38,7 @@ const (
 	ViewVersion
 	ViewAddCommand
 	ViewDeleteCommandConfirm
+	ViewKnownHostConfirm
 )
 
 type tabKind int
@@ -551,6 +552,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddCommand(msg)
 		case ViewDeleteCommandConfirm:
 			return m.updateDeleteCommandConfirm(msg)
+		case ViewKnownHostConfirm:
+			return m.updateKnownHostConfirm(msg)
 		}
 
 	case sshOutputMsg:
@@ -572,6 +575,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, cmd
+
+	case sshHostKeyErrorMsg:
+		if msg.TabId == 0 {
+			for i := range m.tabs {
+				if m.tabs[i].Connecting {
+					h := m.tabs[i].Host
+					m.sshHost = &h
+					m.err = msg.Err
+					m.view = ViewKnownHostConfirm
+					return m, nil
+				}
+			}
+		}
+		m.toast = msg.Err.Error()
+		m.toastSuccess = false
+		m.toastTimer = 120
+		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 
 	case sshErrorMsg:
 		m.toast = msg.Msg
@@ -2229,6 +2249,8 @@ func (m Model) View() string {
 		body = m.viewAddCommand()
 	case ViewDeleteCommandConfirm:
 		body = m.viewDeleteCommandConfirm()
+	case ViewKnownHostConfirm:
+		body = m.viewKnownHostConfirm()
 	default:
 		body = m.viewTabContent()
 	}
@@ -2254,6 +2276,11 @@ type sshOutputMsg struct {
 type sshErrorMsg struct {
 	TabId int
 	Msg   string
+}
+
+type sshHostKeyErrorMsg struct {
+	TabId int
+	Err   error
 }
 
 type sshConnectedMsg struct {
@@ -2633,6 +2660,12 @@ func (m Model) connectSSH(host config.Host) tea.Cmd {
 		select {
 		case res := <-ch:
 			if res.err != nil {
+				if _, ok := res.err.(*ssh.UnknownHostKeyError); ok {
+					return sshHostKeyErrorMsg{TabId: 0, Err: res.err}
+				}
+				if _, ok := res.err.(*ssh.ChangedHostKeyError); ok {
+					return sshHostKeyErrorMsg{TabId: 0, Err: res.err}
+				}
 				return sshErrorMsg{0, res.err.Error()}
 			}
 			return sshConnectedMsg{session: res.session}

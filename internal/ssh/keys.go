@@ -30,17 +30,12 @@ func GenerateKeyPair(name string) (privatePath, publicPath string, err error) {
 		return "", "", fmt.Errorf("failed to generate key: %w", err)
 	}
 
-	privateKeyPEM := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	}
-
+	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
 	privateFile, err := os.OpenFile(privatePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create private key: %w", err)
 	}
 	defer privateFile.Close()
-
 	if err := pem.Encode(privateFile, privateKeyPEM); err != nil {
 		return "", "", fmt.Errorf("failed to encode private key: %w", err)
 	}
@@ -49,12 +44,10 @@ func GenerateKeyPair(name string) (privatePath, publicPath string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create public key: %w", err)
 	}
-
 	publicKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
 	if err := os.WriteFile(publicPath, publicKeyBytes, 0644); err != nil {
 		return "", "", fmt.Errorf("failed to write public key: %w", err)
 	}
-
 	return privatePath, publicPath, nil
 }
 
@@ -64,13 +57,11 @@ func DeployPublicKey(host Host, password, publicKeyPath string) error {
 		return fmt.Errorf("failed to read public key: %w", err)
 	}
 
-	config := &ssh.ClientConfig{
-		User: host.User,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	callback, err := HostKeyCallback()
+	if err != nil {
+		return err
 	}
+	config := &ssh.ClientConfig{User: host.User, Auth: []ssh.AuthMethod{ssh.Password(password)}, HostKeyCallback: callback}
 
 	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
 	client, err := ssh.Dial("tcp", addr, config)
@@ -86,21 +77,19 @@ func DeployPublicKey(host Host, password, publicKeyPath string) error {
 	defer session.Close()
 
 	publicKeyStr := strings.TrimSpace(string(publicKey))
-	
 	var stdout, stderr strings.Builder
 	session.Stdout = &stdout
 	session.Stderr = &stderr
-
 	cmd := fmt.Sprintf(`
-		mkdir -p ~/.ssh && 
-		chmod 700 ~/.ssh && 
-		if [ ! -f ~/.ssh/authorized_keys ]; then 
-			touch ~/.ssh/authorized_keys && 
-			chmod 600 ~/.ssh/authorized_keys; 
-		fi && 
-		if ! grep -qF "%s" ~/.ssh/authorized_keys; then 
-			echo "%s" >> ~/.ssh/authorized_keys && 
-			chmod 600 ~/.ssh/authorized_keys; 
+		mkdir -p ~/.ssh &&
+		chmod 700 ~/.ssh &&
+		if [ ! -f ~/.ssh/authorized_keys ]; then
+			touch ~/.ssh/authorized_keys &&
+			chmod 600 ~/.ssh/authorized_keys;
+		fi &&
+		if ! grep -qF "%s" ~/.ssh/authorized_keys; then
+			echo "%s" >> ~/.ssh/authorized_keys &&
+			chmod 600 ~/.ssh/authorized_keys;
 		fi
 	`, publicKeyStr, publicKeyStr)
 
@@ -123,6 +112,5 @@ func DeployPublicKey(host Host, password, publicKeyPath string) error {
 			return fmt.Errorf("key deployment verification failed: key not found in authorized_keys")
 		}
 	}
-
 	return nil
 }
