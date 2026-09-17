@@ -20,7 +20,7 @@ type Session struct {
 }
 
 // Connect establishes an SSH session to h. If jumpHost is not nil, connects via that host as proxy.
-// jumpSkipKey: when using jump host, set true to skip key auth for jump if key not yet deployed.
+// Host keys are always verified against the user's OpenSSH known_hosts file.
 func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool) (*Session, error) {
 	var client *ssh.Client
 	var err error
@@ -79,8 +79,6 @@ func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host,
 		return nil, fmt.Errorf("failed to get stderr: %w", err)
 	}
 
-	// Start bash with no rc/profile so we get one clean window (no "logging into bash from zsh" etc).
-	// User can run "source ~/.bashrc" or "bash -l" in-session if they want their full env.
 	if err := session.Start("bash --norc --noprofile -i"); err != nil {
 		stdin.Close()
 		session.Close()
@@ -91,7 +89,7 @@ func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host,
 	return &Session{
 		client:   client,
 		session: session,
-		stdin:   stdin,
+		stdin:    stdin,
 		stdout:  stdout,
 		stderr:  stderr,
 	}, nil
@@ -141,9 +139,6 @@ func DialClientViaProxy(targetHost Host, targetPassword string, targetSkipKey bo
 		jumpClient.Close()
 		return nil, err
 	}
-	// When client is closed, we should also close jumpClient. Wrap so closing the returned client closes the chain.
-	// ssh.Client doesn't support wrapping Close. So we leave jumpClient open when target is closed (target conn is closed).
-	// Optionally we could return a wrapper that closes both. For now we only close the target client; the jump stays open until process exits or we add a wrapper.
 	return client, nil
 }
 
@@ -201,16 +196,13 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 	home, _ := os.UserHomeDir()
 	expandPath := func(p string) string {
 		if strings.HasPrefix(p, "~") {
-			// Trim leading slash/backslash so filepath.Join works on Windows (e.g. ~/.ssh -> home/.ssh)
-			rest := strings.TrimLeft(p[1:], `/\`)
+			rest := strings.TrimLeft(p[1:], `/\\`)
 			return filepath.Join(home, rest)
 		}
 		return p
 	}
 
 	var authMethods []ssh.AuthMethod
-
-	// If key is deployed, prioritize it; otherwise try password first
 	keyAdded := false
 	if h.IdentityFile != "" && !skipKeyIfNotDeployed {
 		keyPath := expandPath(h.IdentityFile)
@@ -224,13 +216,10 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 		}
 	}
 
-	// Add password as fallback if key wasn't added, or as primary if no key
 	if password != "" {
 		if keyAdded {
-			// Key first, then password as fallback
 			authMethods = append(authMethods, ssh.Password(password))
 		} else {
-			// Password first if no key
 			authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...)
 		}
 	}
@@ -239,14 +228,17 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 		return nil, fmt.Errorf("no authentication method available (need password or key path)")
 	}
 
-	config := &ssh.ClientConfig{
-		User:            h.User,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         5 * time.Second,
+	hostKeyCallback, err := HostKeyCallback()
+	if err != nil {
+		return nil, err
 	}
 
-	return config, nil
+	return &ssh.ClientConfig{
+		User:            h.User,
+		Auth:            authMethods,
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         5 * time.Second,
+	}, nil
 }
 
 type Host struct {
