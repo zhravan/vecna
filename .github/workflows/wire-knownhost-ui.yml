@@ -1,0 +1,34 @@
+name: Wire known-host trust UI
+
+on:
+  push:
+    branches:
+      - feat/security-known-hosts
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/security-known-hosts
+          fetch-depth: 0
+
+      - name: Apply UI integration
+        run: |
+          python3 scripts/patch_knownhost_ui.py
+          gofmt -w internal/tui/tui.go internal/tui/knownhost_ui.go internal/ssh/knownhosts.go
+          go test ./...
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/patch_knownhost_ui.py .github/workflows/wire-knownhost-ui.yml
+          git add internal/tui/tui.go internal/tui/knownhost_ui.go internal/ssh/knownhosts.go
+          git commit -m "feat(security): wire host key trust flow" || exit 0
+          git push origin HEAD:feat/security-known-hosts
