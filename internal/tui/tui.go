@@ -15,12 +15,12 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/shravan20/vecna/internal/config"
-	"github.com/shravan20/vecna/internal/sftp"
-	"github.com/shravan20/vecna/internal/ssh"
-	"github.com/shravan20/vecna/internal/sshconfig"
-	"github.com/shravan20/vecna/internal/state"
-	"github.com/shravan20/vecna/internal/update"
+	"github.com/zhravan/vecna/internal/config"
+	"github.com/zhravan/vecna/internal/sftp"
+	"github.com/zhravan/vecna/internal/ssh"
+	"github.com/zhravan/vecna/internal/sshconfig"
+	"github.com/zhravan/vecna/internal/state"
+	"github.com/zhravan/vecna/internal/update"
 	sshcrypto "golang.org/x/crypto/ssh"
 )
 
