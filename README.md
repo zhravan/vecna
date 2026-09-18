@@ -19,13 +19,13 @@
 **Linux / macOS:**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/zhravan/vecna/master/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zhravan/vecna/main/scripts/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/zhravan/vecna/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/zhravan/vecna/main/scripts/install.ps1 | iex
 ```
 
 - **Go:** `go install github.com/zhravan/vecna@latest`
