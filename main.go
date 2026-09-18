@@ -1,6 +1,6 @@
 package main
 
-import "github.com/shravan20/vecna/cmd"
+import "github.com/zhravan/vecna/cmd"
 
 func main() {
 	cmd.Execute()
