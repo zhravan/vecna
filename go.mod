@@ -1,4 +1,4 @@
-module github.com/shravan20/vecna
+module github.com/zhravan/vecna
 
 go 1.24.3
 
