@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/shravan20/vecna/internal/config"
-	vecnassh "github.com/shravan20/vecna/internal/ssh"
+	"github.com/zhravan/vecna/internal/config"
+	vecnassh "github.com/zhravan/vecna/internal/ssh"
 )
 
 func (m Model) updateKnownHostConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
