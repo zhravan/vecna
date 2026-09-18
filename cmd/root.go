@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shravan20/vecna/internal/config"
-	"github.com/shravan20/vecna/internal/tui"
+	"github.com/zhravan/vecna/internal/config"
+	"github.com/zhravan/vecna/internal/tui"
 	"github.com/spf13/cobra"
 )
 
