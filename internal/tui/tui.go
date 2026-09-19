@@ -2259,15 +2259,18 @@ func (m *Model) saveHost() {
 		keyDeployed = true // existing key path provided
 	}
 	if autoGenKey && password != "" && identityFile != "" {
-		m.toast = "→ Deploying SSH key..."
+		m.toast = "→ Bootstrapping passwordless SSH..."
 		m.toastSuccess = false
 		m.toastTimer = 100
 		publicKeyPath := identityFile + ".pub"
 		if err := ssh.DeployPublicKey(sshHost, password, publicKeyPath); err == nil {
 			keyDeployed = true
-			m.toast = "✓ SSH key deployed successfully"
+			// The password is only a bootstrap credential. Once the generated
+			// public key is installed and verified, do not persist the password.
+			encryptedPassword = ""
+			m.toast = "✓ SSH key deployed — password no longer required"
 			m.toastSuccess = true
-			m.toastTimer = 30
+			m.toastTimer = 40
 		} else {
 			m.toast = fmt.Sprintf("Key deployment failed: %v", err)
 			m.toastSuccess = false
