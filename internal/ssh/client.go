@@ -206,7 +206,8 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 	}
 
 	var authMethods []ssh.AuthMethod
-	keyAdded := false
+	var keyMethods []ssh.AuthMethod
+	var keyAdded bool
 	var keyParseErr error
 
 	if !skipKeyIfNotDeployed {
@@ -235,7 +236,7 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 				keyParseErr = fmt.Errorf("private key %q could not be loaded: %w", configuredPath, err)
 				continue
 			}
-			authMethods = append(authMethods, ssh.PublicKeys(signer))
+			keyMethods = append(keyMethods, ssh.PublicKeys(signer))
 			keyAdded = true
 			if h.IdentityFile != "" {
 				break
@@ -248,17 +249,18 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 	// Vecna handling private key material.
 	if os.Getenv("SSH_AUTH_SOCK") != "" || h.UseAgent {
 		if agentAuth, err := AgentAuth(); err == nil {
-			authMethods = append(authMethods, agentAuth)
+			keyMethods = append(keyMethods, agentAuth)
 		}
 	}
 
+	// Prefer an explicitly supplied password before key/agent authentication.
+	// Some SSH servers have a low MaxAuthTries limit; trying a rejected key first
+	// can consume an authentication attempt before the valid password is tried.
 	if password != "" {
-		if keyAdded || len(authMethods) > 0 {
-			authMethods = append(authMethods, ssh.Password(password))
-		} else {
-			authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...)
-		}
+		authMethods = append(authMethods, ssh.Password(password))
 	}
+	authMethods = append(authMethods, keyMethods...)
+	_ = keyAdded
 
 	if len(authMethods) == 0 {
 		if keyParseErr != nil {
