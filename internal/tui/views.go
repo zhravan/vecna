@@ -1023,7 +1023,43 @@ func (m Model) renderTabBar() string {
 	return line
 }
 
+func (m Model) viewSplitSSHTabs() string {
+	if m.width < 70 || len(m.tabs) < 3 || m.currentTabIndex <= 0 {
+		return m.viewSSHTab(m.tabs[m.currentTabIndex])
+	}
+	other := m.currentTabIndex + 1
+	if other >= len(m.tabs) { other = m.currentTabIndex - 1 }
+	leftWidth := (m.width - 2) / 2
+	height := m.height - 4
+	if height < 6 { height = 6 }
+	left := renderSSHPane(m.tabs[m.currentTabIndex], leftWidth, height, m.tabs[m.currentTabIndex].Id == m.tabs[m.currentTabIndex].Id)
+	right := renderSSHPane(m.tabs[other], m.width-leftWidth-2, height, false)
+	bar := styleStatusBar.Render(keyHint("ctrl+\\", "split") + "  " + keyHint("ctrl+←/→", "switch pane") + "  " + keyHint("esc", "close active"))
+	return lipgloss.JoinVertical(lipgloss.Left, lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right), bar)
+}
+
+func renderSSHPane(t tab, width, height int, active bool) string {
+	title := t.Title
+	if active { title += "  ●" } else { title += "  ○" }
+	if t.Connecting {
+		return stylePanelSSH.Width(width).Height(height).Render(stylePanelTitleActions.Render(title) + "\n\nConnecting...")
+	}
+	output := stripANSI(t.Output)
+	output = strings.ReplaceAll(output, "\r\n", "\n")
+	output = strings.ReplaceAll(output, "\r", "\n")
+	if output == "" {
+		output = "Waiting for output..."
+	}
+	lines := wrapLines(output, width-4)
+	if len(lines) > height-3 { lines = lines[len(lines)-height+3:] }
+	content := stylePanelTitleActions.Render(title) + "\n" + strings.Join(lines, "\n")
+	return stylePanelSSH.Width(width).Height(height).Render(content)
+}
+
 func (m Model) viewSSHTab(t tab) string {
+	if m.splitMode && m.currentTabIndex > 0 && len(m.tabs) > 2 {
+		return m.viewSplitSSHTabs()
+	}
 	if m.width == 0 {
 		return renderLoader(40, 12, m.animFrame, "Starting up...")
 	}
