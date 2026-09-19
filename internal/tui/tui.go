@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -2444,19 +2445,23 @@ func fetchActiveSSHCountCmd(host config.Host) tea.Cmd {
 // runCommandCmdMulti runs the command on each host and returns combined results (runs sequentially).
 func runCommandCmdMulti(hosts []config.Host, command string) tea.Cmd {
 	return func() tea.Msg {
-		results := make([]runCommandHostResult, 0, len(hosts))
-		for _, h := range hosts {
-			msg := runCommandCmd(h, command)
-			res, _ := msg.(runCommandResultMsg)
-			out := res.output
-			if res.err != nil {
-				out = out + "\n" + res.err.Error()
-			}
-			if out == "" {
-				out = "(no output)"
-			}
-			results = append(results, runCommandHostResult{Host: h.Name, Output: out, Err: res.err})
+		results := make([]runCommandHostResult, len(hosts))
+		var wg sync.WaitGroup
+		for i, h := range hosts {
+			wg.Add(1)
+			go func(i int, h config.Host) {
+				defer wg.Done()
+				msg := runCommandCmd(h, command)
+				res, _ := msg.(runCommandResultMsg)
+				out := res.output
+				if res.err != nil {
+					out = strings.TrimSpace(out + "\n" + res.err.Error())
+				}
+				if out == "" { out = "(no output)" }
+				results[i] = runCommandHostResult{Host: h.Name, Output: out, Err: res.err}
+			}(i, h)
 		}
+		wg.Wait()
 		return runCommandMultiResultMsg{results: results}
 	}
 }
@@ -2700,6 +2705,17 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	cur := &m.tabs[m.currentTabIndex]
+	// Reconnect the active session in-place without opening another tab.
+	if key.Matches(msg, m.keys.Reconnect) {
+		host := cur.Host
+		if cur.Session != nil { _ = cur.Session.Close() }
+		cur.Session = nil
+		cur.Connecting = true
+		cur.Output = ""
+		cur.Log = append(cur.Log, "↻ Reconnecting...")
+		return m, m.connectSSH(host)
+	}
+
 	// Close tab: Esc, Ctrl+Q, or Ctrl+]
 	switch msg.String() {
 	case "ctrl+]", "ctrl+q", "esc":
