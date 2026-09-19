@@ -188,9 +188,6 @@ var (
 
 	styleTabBar = lipgloss.NewStyle().
 			Background(colorSurface).
-			BorderBottom(true).
-			BorderStyle(lipgloss.Border{Bottom: "─"}).
-			BorderForeground(colorBorderDim).
 			Width(80)
 )
 
