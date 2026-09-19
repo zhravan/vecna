@@ -33,10 +33,31 @@ func ValidateConnection(host Host, password string) error {
 		if signer, err := loadPrivateKey(host.IdentityFile); err == nil {
 			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
+	} else {
+		home, _ := os.UserHomeDir()
+		for _, path := range []string{
+			filepath.Join(home, ".ssh", "id_ed25519"),
+			filepath.Join(home, ".ssh", "id_ecdsa"),
+			filepath.Join(home, ".ssh", "id_rsa"),
+		} {
+			if signer, err := loadPrivateKey(path); err == nil {
+				authMethods = append(authMethods, ssh.PublicKeys(signer))
+				break
+			}
+		}
+	}
+
+	// Use the user's SSH agent automatically when available. This supports
+	// passphrase-protected keys and hardware-backed keys without reading their
+	// private key material into Vecna.
+	if os.Getenv("SSH_AUTH_SOCK") != "" || host.UseAgent {
+		if agentAuth, err := AgentAuth(); err == nil {
+			authMethods = append(authMethods, agentAuth)
+		}
 	}
 
 	if len(authMethods) == 0 {
-		return fmt.Errorf("no authentication method available (need password or key path)")
+		return fmt.Errorf("no authentication method available (need password, key path, or SSH agent)")
 	}
 
 	callback, err := HostKeyCallback()

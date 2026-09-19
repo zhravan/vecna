@@ -73,9 +73,11 @@ func Connect(h Host, password string, skipKeyIfNotDeployed bool, jumpHost *Host,
 	}
 	return &Session{client: client, session: session, stdin: stdin, stdout: stdout, stderr: stderr}, nil
 }
+
 func DialClient(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Client, error) {
 	return dialClient(h, password, skipKeyIfNotDeployed, nil, "")
 }
+
 func dialClient(h Host, password string, skipKeyIfNotDeployed bool, proxyClient *ssh.Client, _ string) (*ssh.Client, error) {
 	config, err := buildSSHConfig(h, password, skipKeyIfNotDeployed)
 	if err != nil {
@@ -100,6 +102,7 @@ func dialClient(h Host, password string, skipKeyIfNotDeployed bool, proxyClient 
 	}
 	return ssh.NewClient(clientConn, chans, reqs), nil
 }
+
 func DialClientViaProxy(targetHost Host, targetPassword string, targetSkipKey bool, jumpHost Host, jumpPassword string, jumpSkipKey bool) (*ssh.Client, error) {
 	jumpClient, err := DialClient(jumpHost, jumpPassword, jumpSkipKey)
 	if err != nil {
@@ -130,6 +133,7 @@ func DialClientViaProxyManaged(targetHost Host, targetPassword string, targetSki
 	}
 	return &ManagedClient{Client: client, cleanup: func() { _ = jumpClient.Close() }}, nil
 }
+
 func (c *ManagedClient) Close() error {
 	err := c.Client.Close()
 	if c.cleanup != nil {
@@ -138,6 +142,7 @@ func (c *ManagedClient) Close() error {
 	}
 	return err
 }
+
 func RunCommand(h Host, password string, skipKey bool, jumpHost *Host, jumpPassword string, jumpSkipKey bool, command string) (string, error) {
 	var client *ssh.Client
 	var err error
@@ -158,10 +163,12 @@ func RunCommand(h Host, password string, skipKey bool, jumpHost *Host, jumpPassw
 	out, err := session.CombinedOutput(command)
 	return string(out), err
 }
+
 func (s *Session) Resize(width, height int) error  { return s.session.WindowChange(height, width) }
 func (s *Session) Write(data []byte) (int, error)  { return s.stdin.Write(data) }
 func (s *Session) Read(p []byte) (int, error)      { return s.stdout.Read(p) }
 func (s *Session) ReadError(p []byte) (int, error) { return s.stderr.Read(p) }
+
 func (s *Session) Exec(command string) (string, error) {
 	if s == nil || s.client == nil {
 		return "", fmt.Errorf("SSH session is closed")
@@ -174,6 +181,7 @@ func (s *Session) Exec(command string) (string, error) {
 	out, err := ch.CombinedOutput(command)
 	return string(out), err
 }
+
 func (s *Session) Close() error {
 	if s.stdin != nil {
 		_ = s.stdin.Close()
@@ -186,6 +194,7 @@ func (s *Session) Close() error {
 	}
 	return nil
 }
+
 func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.ClientConfig, error) {
 	home, _ := os.UserHomeDir()
 	expandPath := func(p string) string {
@@ -195,34 +204,69 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 		}
 		return p
 	}
+
 	var authMethods []ssh.AuthMethod
 	keyAdded := false
-	if h.IdentityFile != "" && !skipKeyIfNotDeployed {
-		keyPath := expandPath(h.IdentityFile)
-		key, err := os.ReadFile(keyPath)
-		if err == nil {
+	var keyParseErr error
+
+	if !skipKeyIfNotDeployed {
+		keyPaths := []string{}
+		if h.IdentityFile != "" {
+			keyPaths = append(keyPaths, h.IdentityFile)
+		} else if home != "" {
+			keyPaths = []string{
+				filepath.Join(home, ".ssh", "id_ed25519"),
+				filepath.Join(home, ".ssh", "id_ecdsa"),
+				filepath.Join(home, ".ssh", "id_rsa"),
+			}
+		}
+
+		for _, configuredPath := range keyPaths {
+			keyPath := expandPath(configuredPath)
+			key, err := os.ReadFile(keyPath)
+			if err != nil {
+				if h.IdentityFile != "" && !os.IsNotExist(err) {
+					keyParseErr = fmt.Errorf("read private key %q: %w", configuredPath, err)
+				}
+				continue
+			}
 			signer, err := ssh.ParsePrivateKey(key)
-			if err == nil {
-				authMethods = append(authMethods, ssh.PublicKeys(signer))
-				keyAdded = true
+			if err != nil {
+				keyParseErr = fmt.Errorf("private key %q could not be loaded: %w", configuredPath, err)
+				continue
+			}
+			authMethods = append(authMethods, ssh.PublicKeys(signer))
+			keyAdded = true
+			if h.IdentityFile != "" {
+				break
 			}
 		}
 	}
-	if h.UseAgent {
+
+	// Use the user's SSH agent automatically whenever it is available. This
+	// supports passphrase-protected keys and hardware-backed keys without
+	// Vecna handling private key material.
+	if os.Getenv("SSH_AUTH_SOCK") != "" || h.UseAgent {
 		if agentAuth, err := AgentAuth(); err == nil {
 			authMethods = append(authMethods, agentAuth)
 		}
 	}
+
 	if password != "" {
-		if keyAdded {
+		if keyAdded || len(authMethods) > 0 {
 			authMethods = append(authMethods, ssh.Password(password))
 		} else {
 			authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...)
 		}
 	}
+
 	if len(authMethods) == 0 {
+		if keyParseErr != nil {
+			return nil, fmt.Errorf("no usable SSH authentication method: %w; use ssh-agent for passphrase-protected keys", keyParseErr)
+		}
 		return nil, fmt.Errorf("no authentication method available (need password, key path, or SSH agent)")
 	}
+
 	hostKeyCallback, err := HostKeyCallback()
 	if err != nil {
 		return nil, err
