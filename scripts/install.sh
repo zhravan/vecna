@@ -2,8 +2,8 @@
 set -eu
 
 REPO="zhravan/vecna"
-VERSION="\${VERSION:-latest}"
-BIN_DIR="\${BIN_DIR:-\$HOME/.local/bin}"
+VERSION="${VERSION:-latest}"
+BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 
 info() {
   printf '[vecna] %s\n' "$1"
@@ -34,18 +34,18 @@ command -v curl >/dev/null 2>&1 || fail "curl is required."
 command -v tar >/dev/null 2>&1 || fail "tar is required."
 
 info "Starting Vecna installation"
-info "Platform: \${OS}/\${ARCH}"
+info "Platform: ${OS}/${ARCH}"
 
 if [ "$VERSION" = "latest" ]; then
   info "Checking latest release..."
   TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\([^"]*\)".*/\1/p' | head -n 1)"
   [ -n "$TAG" ] || fail "Unable to determine the latest Vecna release."
 else
-  TAG="\${VERSION#v}"
+  TAG="${VERSION#v}"
 fi
 
-ASSET="vecna_\${TAG}_\${OS}_\${ARCH}.tar.gz"
-BASE_URL="https://github.com/$REPO/releases/download/v\${TAG}"
+ASSET="vecna_${TAG}_${OS}_${ARCH}.tar.gz"
+BASE_URL="https://github.com/$REPO/releases/download/v${TAG}"
 ARCHIVE_URL="$BASE_URL/$ASSET"
 CHECKSUM_URL="$BASE_URL/SHA256SUMS.txt"
 
@@ -56,8 +56,8 @@ EXTRACTED="$TMP_DIR/vecna"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT INT TERM
 
-info "Release: v\${TAG}"
-info "Downloading \${ASSET}..."
+info "Release: v${TAG}"
+info "Downloading ${ASSET}..."
 curl -fL --progress-bar "$ARCHIVE_URL" -o "$ARCHIVE"
 success "Binary archive downloaded"
 
@@ -95,9 +95,9 @@ info "Installing to $BIN_DIR/vecna..."
 mkdir -p "$BIN_DIR"
 install -m 0755 "$EXTRACTED" "$BIN_DIR/vecna"
 [ -x "$BIN_DIR/vecna" ] || fail "Install failed: $BIN_DIR/vecna is not executable."
-success "Vecna v\${TAG} installed successfully"
+success "Vecna v${TAG} installed successfully"
 
-case ":\${PATH:-}:" in
+case ":${PATH:-}:" in
   *":$BIN_DIR:"*) ;;
   *)
     printf '\n'
