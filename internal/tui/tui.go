@@ -555,12 +555,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, nil
-			}
 			case "ctrl+\\":
 				if m.currentTabIndex > 0 {
 					m.splitMode = !m.splitMode
 				}
 				return m, nil
+			}
 			if m.currentTabIndex == 0 {
 				return m.updateHome(msg)
 			}
