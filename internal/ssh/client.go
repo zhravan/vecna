@@ -24,6 +24,13 @@ func (s *Session) Resize(width, height int) error { return s.session.WindowChang
 func (s *Session) Write(data []byte) (int, error) { return s.stdin.Write(data) }
 func (s *Session) Read(p []byte) (int, error) { return s.stdout.Read(p) }
 func (s *Session) ReadError(p []byte) (int, error) { return s.stderr.Read(p) }
-func (s *Session) Exec(command string) (string, error) {\n\tif s == nil || s.client == nil { return "", fmt.Errorf("SSH session is closed") }\n\tch, err := s.client.NewSession()\n\tif err != nil { return "", err }\n\tdefer ch.Close()\n\tout, err := ch.CombinedOutput(command)\n\treturn string(out), err\n}\nfunc (s *Session) Close() error { if s.stdin != nil { _ = s.stdin.Close() }; if s.session != nil { _ = s.session.Close() }; if s.client != nil { return s.client.Close() }; return nil }
+func (s *Session) Exec(command string) (string, error) {
+	if s == nil || s.client == nil { return "", fmt.Errorf("SSH session is closed") }
+	ch, err := s.client.NewSession()
+	if err != nil { return "", err }
+	defer ch.Close()
+	out, err := ch.CombinedOutput(command)
+	return string(out), err
+}\nfunc (s *Session) Close() error { if s.stdin != nil { _ = s.stdin.Close() }; if s.session != nil { _ = s.session.Close() }; if s.client != nil { return s.client.Close() }; return nil }
 func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.ClientConfig, error) { home, _ := os.UserHomeDir(); expandPath := func(p string) string { if strings.HasPrefix(p, "~") { rest := strings.TrimLeft(p[1:], `/\\`); return filepath.Join(home, rest) }; return p }; var authMethods []ssh.AuthMethod; keyAdded := false; if h.IdentityFile != "" && !skipKeyIfNotDeployed { keyPath := expandPath(h.IdentityFile); key, err := os.ReadFile(keyPath); if err == nil { signer, err := ssh.ParsePrivateKey(key); if err == nil { authMethods = append(authMethods, ssh.PublicKeys(signer)); keyAdded = true } } }; if h.UseAgent { if agentAuth, err := AgentAuth(); err == nil { authMethods = append(authMethods, agentAuth) } }; if password != "" { if keyAdded { authMethods = append(authMethods, ssh.Password(password)) } else { authMethods = append([]ssh.AuthMethod{ssh.Password(password)}, authMethods...) } }; if len(authMethods) == 0 { return nil, fmt.Errorf("no authentication method available (need password, key path, or SSH agent)") }; hostKeyCallback, err := HostKeyCallback(); if err != nil { return nil, err }; timeout := 5 * time.Second; if h.ConnectTimeoutSeconds > 0 { timeout = time.Duration(h.ConnectTimeoutSeconds) * time.Second }; return &ssh.ClientConfig{User: h.User, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: timeout}, nil }
 type Host struct { Name string; Hostname string; User string; Port int; IdentityFile string; UseAgent bool; ConnectTimeoutSeconds int; KeepAliveSeconds int }
