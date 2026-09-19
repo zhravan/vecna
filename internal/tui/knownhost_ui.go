@@ -3,6 +3,8 @@ package tui
 import (
 	"errors"
 	"fmt"
+	
+	"github.com/atotto/clipboard"
 	"strings"
 	"time"
 
@@ -13,7 +15,29 @@ import (
 	vecnassh "github.com/zhravan/vecna/internal/ssh"
 )
 
+func knownHostFingerprint(err error) string {
+	var unknown *vecnassh.UnknownHostKeyError
+	if errors.As(err, &unknown) { return unknown.Fingerprint }
+	var changed *vecnassh.ChangedHostKeyError
+	if errors.As(err, &changed) { return changed.Fingerprint }
+	return ""
+}
+
 func (m Model) updateKnownHostConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "c" || msg.String() == "C" {
+		if fp := knownHostFingerprint(m.err); fp != "" {
+			if err := clipboard.WriteAll(fp); err != nil {
+				m.toast = fmt.Sprintf("Could not copy fingerprint: %v", err)
+				m.toastSuccess = false
+			} else {
+				m.toast = "Fingerprint copied to clipboard"
+				m.toastSuccess = true
+			}
+			m.toastTimer = 60
+		}
+		return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+	}
+
 	if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" || key.Matches(msg, m.keys.Back) {
 		return m.cancelKnownHostPrompt()
 	}
@@ -90,10 +114,12 @@ func (m Model) viewKnownHostConfirm() string {
 			"Algorithm:   "+unknown.Algorithm,
 			"Fingerprint: "+unknown.Fingerprint,
 			"",
-			"Verify this fingerprint independently before trusting it.",
+			"Verify this SHA256 fingerprint independently before trusting it.",
+			"",
+			"Known hosts: "+vecnassh.KnownHostsPath(),
 			"",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")).Bold(true).Render("[Enter/Y] Trust & Connect"),
-			"[Esc/N] Cancel",
+			"[C] Copy fingerprint   [Esc/N] Cancel",
 		)
 		return centerKnownHostModal(strings.Join(lines, "\n"))
 	}
@@ -113,12 +139,14 @@ func (m Model) viewKnownHostConfirm() string {
 			}
 		}
 		lines = append(lines,
+			"Algorithm: "+changed.Algorithm,
 			"Presented fingerprint:",
 			"  "+changed.Fingerprint,
 			"",
 			"The saved key does not match the server key.",
-			"Vecna will not automatically replace it.",
+			"Vecna will not automatically replace or overwrite it.",
 			"",
+			"[C] Copy presented fingerprint",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true).Render("[Esc] Close"),
 		)
 		return centerKnownHostModal(strings.Join(lines, "\n"))

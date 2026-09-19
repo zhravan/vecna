@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ func (e *ChangedHostKeyError) Error() string {
 func (e *ChangedHostKeyError) Unwrap() error { return e.Cause }
 
 var probeMu sync.Mutex
+var knownHostsMu sync.Mutex
 
 func KnownHostsPath() string {
 	home, err := os.UserHomeDir()
@@ -57,6 +59,7 @@ func ensureKnownHostsFile() (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create SSH directory: %w", err)
 	}
+	_ = os.Chmod(dir, 0700)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
@@ -68,6 +71,7 @@ func ensureKnownHostsFile() (string, error) {
 	} else if err != nil {
 		return "", fmt.Errorf("stat known_hosts: %w", err)
 	}
+	_ = os.Chmod(path, 0600)
 	return path, nil
 }
 
@@ -124,6 +128,15 @@ func TrustHostKey(host string, key ssh.PublicKey) error {
 		return err
 	}
 	line := knownhosts.Line([]string{knownhosts.Normalize(host)}, key)
+	knownHostsMu.Lock()
+	defer knownHostsMu.Unlock()
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read known_hosts: %w", err)
+	}
+	if strings.Contains(string(existing), line) {
+		return nil
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return fmt.Errorf("open known_hosts: %w", err)
@@ -131,6 +144,9 @@ func TrustHostKey(host string, key ssh.PublicKey) error {
 	defer f.Close()
 	if _, err := fmt.Fprintln(f, line); err != nil {
 		return fmt.Errorf("write known_hosts: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync known_hosts: %w", err)
 	}
 	return nil
 }
