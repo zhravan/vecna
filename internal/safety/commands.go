@@ -11,4 +11,11 @@ var dangerous = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\btruncate\s+.*--size\s+0`),
 }
 
-func IsDangerous(command string) bool { for _, re := range dangerous { if re.MatchString(command) { return true } }; return false }
+func IsDangerous(command string) bool {
+	for _, re := range dangerous {
+		if re.MatchString(command) {
+			return true
+		}
+	}
+	return false
+}

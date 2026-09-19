@@ -6,12 +6,12 @@ import (
 )
 
 type CommandTarget struct {
-	Host     Host
-	Password string
-	SkipKey  bool
-	JumpHost *Host
+	Host         Host
+	Password     string
+	SkipKey      bool
+	JumpHost     *Host
 	JumpPassword string
-	JumpSkipKey bool
+	JumpSkipKey  bool
 }
 
 type CommandResult struct {
@@ -47,13 +47,13 @@ func RunCommandParallel(ctx context.Context, targets []CommandTarget, command st
 
 			outputCh := make(chan struct {
 				output string
-				err error
+				err    error
 			}, 1)
 			go func() {
 				out, err := RunCommand(target.Host, target.Password, target.SkipKey, target.JumpHost, target.JumpPassword, target.JumpSkipKey, command)
 				outputCh <- struct {
 					output string
-					err error
+					err    error
 				}{out, err}
 			}()
 			select {

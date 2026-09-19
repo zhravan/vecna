@@ -2427,7 +2427,11 @@ func filterTransferEntries(entries []transferFileEntry, query string) []transfer
 	return out
 }
 
-type systemStatsResultMsg struct { HostName string; Stats monitoring.Stats; Err error }
+type systemStatsResultMsg struct {
+	HostName string
+	Stats    monitoring.Stats
+	Err      error
+}
 
 type activeSSHCountResultMsg struct {
 	HostName string
@@ -2508,9 +2512,13 @@ func runCommandCmd(host config.Host, command string) tea.Msg {
 // fetchActiveSSHCountCmd runs "who 2>/dev/null | wc -l" on the host and returns the count (from server).
 func fetchLiveStatsCmd(host config.Host, session *ssh.Session) tea.Cmd {
 	return func() tea.Msg {
-		if session == nil { return systemStatsResultMsg{HostName: host.Name, Err: fmt.Errorf("host is not connected")} }
+		if session == nil {
+			return systemStatsResultMsg{HostName: host.Name, Err: fmt.Errorf("host is not connected")}
+		}
 		out, err := session.Exec(monitoring.Command())
-		if err != nil { return systemStatsResultMsg{HostName: host.Name, Err: err} }
+		if err != nil {
+			return systemStatsResultMsg{HostName: host.Name, Err: err}
+		}
 		stats, err := monitoring.Parse(out)
 		return systemStatsResultMsg{HostName: host.Name, Stats: stats, Err: err}
 	}
@@ -2546,7 +2554,9 @@ func runCommandCmdMulti(hosts []config.Host, command string) tea.Cmd {
 				if res.err != nil {
 					out = strings.TrimSpace(out + "\n" + res.err.Error())
 				}
-				if out == "" { out = "(no output)" }
+				if out == "" {
+					out = "(no output)"
+				}
 				results[i] = runCommandHostResult{Host: h.Name, Output: out, Err: res.err}
 			}(i, h)
 		}
@@ -2796,7 +2806,9 @@ func (m Model) updateSSH(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Reconnect the active session in-place without opening another tab.
 	if key.Matches(msg, m.keys.Reconnect) {
 		host := cur.Host
-		if cur.Session != nil { _ = cur.Session.Close() }
+		if cur.Session != nil {
+			_ = cur.Session.Close()
+		}
 		cur.Session = nil
 		cur.Connecting = true
 		cur.Output = ""
