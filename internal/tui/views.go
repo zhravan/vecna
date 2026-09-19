@@ -1031,6 +1031,8 @@ func (m Model) viewTabContent() string {
 }
 
 func (m Model) renderTabBar() string {
+	// The strip itself stays one row; its bottom edge is provided by the
+	// surrounding layout rather than by each individual tab.
 	// Build and measure each tab before joining. Never count raw ANSI escape
 	// sequences as visible runes: doing so can truncate a styled tab halfway
 	// through an escape sequence and make the entire tab strip disappear.
