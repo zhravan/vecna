@@ -29,7 +29,6 @@ jobs:
           fi
 
       - name: Commit formatting changes
-        if: github.ref != 'refs/heads/main'
         run: |
           if git diff --quiet; then
             echo "Go code is already formatted."
