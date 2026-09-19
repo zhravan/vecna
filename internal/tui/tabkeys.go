@@ -57,6 +57,18 @@ func tabIndexFromPlainDigitKey(s string) (idx int, ok bool) {
 }
 
 // tabIndexFromAltDigitKey parses Bubble Tea's "alt+1"–"alt+9" (Option+digit on macOS / Alt+digit elsewhere).
+// tabSwitchDeltaFromKey returns the direction for global browser-style tab cycling.
+func tabSwitchDeltaFromKey(s string) (delta int, ok bool) {
+	switch s {
+	case "ctrl+tab", "ctrl+right", "alt+right":
+		return 1, true
+	case "ctrl+shift+tab", "ctrl+left", "alt+left":
+		return -1, true
+	default:
+		return 0, false
+	}
+}
+
 func tabIndexFromAltDigitKey(s string) (idx int, ok bool) {
 	const prefix = "alt+"
 	if !strings.HasPrefix(s, prefix) {
