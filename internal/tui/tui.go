@@ -464,7 +464,7 @@ func startPortForwardCmd(host config.Host, localPort, remoteHost, remotePort str
 		}
 		password = decrypted
 	}
-	skipKey := !host.KeyDeployed && host.IdentityFile != ""
+	skipKey := host.AutoGenerateKey && !host.KeyDeployed && host.IdentityFile != ""
 
 	client, err := ssh.DialClient(sshHost, password, skipKey)
 	if err != nil {
@@ -2489,7 +2489,7 @@ func runCommandCmd(host config.Host, command string) tea.Msg {
 		}
 		password = dec
 	}
-	skipKey := !host.KeyDeployed && host.IdentityFile != ""
+	skipKey := host.AutoGenerateKey && !host.KeyDeployed && host.IdentityFile != ""
 	var jumpHost *ssh.Host
 	var jumpPassword string
 	var jumpSkipKey bool
@@ -2509,7 +2509,7 @@ func runCommandCmd(host config.Host, command string) tea.Msg {
 			dec, _ := config.DecryptPassword(jumpConfig.Password)
 			jumpPassword = dec
 		}
-		jumpSkipKey = !jumpConfig.KeyDeployed && jumpConfig.IdentityFile != ""
+		jumpSkipKey = jumpConfig.AutoGenerateKey && !jumpConfig.KeyDeployed && jumpConfig.IdentityFile != ""
 	}
 	out, err := ssh.RunCommand(sshHost, password, skipKey, jumpHost, jumpPassword, jumpSkipKey, command)
 	return runCommandResultMsg{output: out, err: err}
@@ -2666,7 +2666,7 @@ func listRemoteCmd(host config.Host, remotePath string) tea.Cmd {
 			}
 			password = dec
 		}
-		skipKey := !host.KeyDeployed && host.IdentityFile != ""
+		skipKey := host.AutoGenerateKey && !host.KeyDeployed && host.IdentityFile != ""
 		var client *sshcrypto.Client
 		var err error
 		if host.ProxyJump != "" {
@@ -2730,7 +2730,7 @@ func (m Model) connectSSH(host config.Host) tea.Cmd {
 			return sshErrorMsg{0, "no authentication method available (need password or key)"}
 		}
 
-		skipKey := !host.KeyDeployed && host.IdentityFile != ""
+		skipKey := host.AutoGenerateKey && !host.KeyDeployed && host.IdentityFile != ""
 
 		var jumpHost *ssh.Host
 		var jumpPassword string
@@ -2754,7 +2754,7 @@ func (m Model) connectSSH(host config.Host) tea.Cmd {
 				}
 				jumpPassword = dec
 			}
-			jumpSkipKey = !jumpConfig.KeyDeployed && jumpConfig.IdentityFile != ""
+			jumpSkipKey = jumpConfig.AutoGenerateKey && !jumpConfig.KeyDeployed && jumpConfig.IdentityFile != ""
 		}
 
 		type connResult struct {
