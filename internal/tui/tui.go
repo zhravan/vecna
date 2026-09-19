@@ -2223,7 +2223,13 @@ func (m *Model) saveHost() {
 		var unknown *ssh.UnknownHostKeyError
 		var changed *ssh.ChangedHostKeyError
 		if errors.As(err, &unknown) || errors.As(err, &changed) {
-			h := sshHost
+			h := config.Host{
+				Name:         sshHost.Name,
+				Hostname:     sshHost.Hostname,
+				User:         sshHost.User,
+				Port:         sshHost.Port,
+				IdentityFile: sshHost.IdentityFile,
+			}
 			m.sshHost = &h
 			m.err = err
 			m.knownHostFromAdd = true
