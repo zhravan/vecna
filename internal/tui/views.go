@@ -303,6 +303,7 @@ func (m Model) renderStatusBar() string {
 		keyHint("v", "version"),
 		keyHint("c", "connect"),
 		keyHint("r", "run cmd"),
+		keyHint("R", "reconnect"),
 		keyHint("P", "pin"),
 		keyHint("?", "help"),
 		keyHint("q", "quit"),
@@ -1061,7 +1062,7 @@ func (m Model) viewSSHTab(t tab) string {
 			lines = lines[len(lines)-termHeight:]
 		}
 		screen := strings.Join(lines, "\n")
-		statusBar := styleStatusBar.Render(keyHint("alt+1-9", "jump tab") + "  " + keyHint("ctrl+←/→", "cycle") + "  " + keyHint("esc", "close"))
+		statusBar := styleStatusBar.Render(keyHint("alt+1-9", "jump tab") + "  " + keyHint("ctrl+←/→", "cycle") + "  " + keyHint("R", "reconnect") + "  " + keyHint("esc", "close"))
 		terminalBox := stylePanelSSH.
 			Width(termWidth).
 			Height(termHeight).
