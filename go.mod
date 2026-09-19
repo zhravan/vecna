@@ -3,6 +3,7 @@ module github.com/zhravan/vecna
 go 1.24.3
 
 require (
+	github.com/skeema/knownhosts v1.3.2
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0

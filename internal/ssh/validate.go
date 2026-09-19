@@ -44,14 +44,22 @@ func ValidateConnection(host Host, password string) error {
 		return err
 	}
 
+	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
+	knownAlgorithms, err := HostKeyAlgorithms(addr)
+	if err != nil {
+		return err
+	}
+
 	config := &ssh.ClientConfig{
 		User:            host.User,
 		Auth:            authMethods,
 		HostKeyCallback: callback,
 		Timeout:         5 * time.Second,
 	}
+	if len(knownAlgorithms) > 0 {
+		config.HostKeyAlgorithms = knownAlgorithms
+	}
 
-	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)

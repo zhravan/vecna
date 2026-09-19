@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+	skeemaknownhosts "github.com/skeema/knownhosts"
 )
 
 var errHostKeyProbe = errors.New("vecna: host key probe complete")
@@ -80,10 +81,11 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 	if err != nil {
 		return nil, err
 	}
-	callback, err := knownhosts.New(path)
+	db, err := skeemaknownhosts.NewDB(path)
 	if err != nil {
 		return nil, fmt.Errorf("load known_hosts: %w", err)
 	}
+	callback := db.HostKeyCallback()
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		if err := callback(hostname, remote, key); err != nil {
@@ -117,6 +119,23 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 		}
 		return nil
 	}, nil
+}
+
+
+// HostKeyAlgorithms returns the host-key algorithms pinned for host in known_hosts.
+// SSH servers may offer several host-key types; constraining negotiation to the
+// algorithms already trusted for this host prevents x/crypto/ssh from selecting
+// an unpinned algorithm and incorrectly reporting a host-key change.
+func HostKeyAlgorithms(host string) ([]string, error) {
+	path, err := ensureKnownHostsFile()
+	if err != nil {
+		return nil, err
+	}
+	db, err := skeemaknownhosts.NewDB(path)
+	if err != nil {
+		return nil, fmt.Errorf("load known_hosts: %w", err)
+	}
+	return db.HostKeyAlgorithms(host), nil
 }
 
 func TrustHostKey(host string, key ssh.PublicKey) error {
