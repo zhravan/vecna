@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	repoOwner = "zhravan"
-	repoName  = "vecna"
-	apiURL    = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases"
+	repoOwner   = "zhravan"
+	repoName    = "vecna"
+	apiURL      = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/releases"
 	releasesURL = "https://github.com/" + repoOwner + "/" + repoName + "/releases"
 )
 

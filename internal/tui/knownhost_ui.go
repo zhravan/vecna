@@ -3,7 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
-	
+
 	"github.com/atotto/clipboard"
 	"strings"
 	"time"
@@ -17,9 +17,13 @@ import (
 
 func knownHostFingerprint(err error) string {
 	var unknown *vecnassh.UnknownHostKeyError
-	if errors.As(err, &unknown) { return unknown.Fingerprint }
+	if errors.As(err, &unknown) {
+		return unknown.Fingerprint
+	}
 	var changed *vecnassh.ChangedHostKeyError
-	if errors.As(err, &changed) { return changed.Fingerprint }
+	if errors.As(err, &changed) {
+		return changed.Fingerprint
+	}
 	return ""
 }
 
