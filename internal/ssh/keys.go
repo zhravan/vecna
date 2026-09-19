@@ -71,7 +71,6 @@ func DeployPublicKey(host Host, password, publicKeyPath string) error {
 		config.HostKeyAlgorithms = knownAlgorithms
 	}
 
-	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
