@@ -30,8 +30,19 @@ func (m Model) updateKnownHostConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.toastTimer = 80
 				return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 			}
+
+			// Host creation validation reached this screen before the host was
+			// persisted. Keep the form and retry validation; saveHost will only
+			// persist after the trusted key is accepted.
+			if m.knownHostFromAdd {
+				m.err = nil
+				m.view = ViewAddHost
+				return m, nil
+			}
+
 			host := *m.sshHost
 			m.err = nil
+			m.sshHost = nil
 			m.view = ViewHome
 			return m, m.connectSSH(host)
 		}
@@ -39,13 +50,22 @@ func (m Model) updateKnownHostConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Changed keys intentionally have no trust/replace action here.
-	if _, ok := m.err.(*vecnassh.ChangedHostKeyError); ok {
+	var changed *vecnassh.ChangedHostKeyError
+	if errors.As(m.err, &changed) {
 		return m, nil
 	}
 	return m.cancelKnownHostPrompt()
 }
 
 func (m Model) cancelKnownHostPrompt() (tea.Model, tea.Cmd) {
+	if m.knownHostFromAdd {
+		m.err = nil
+		m.sshHost = nil
+		m.knownHostFromAdd = false
+		m.view = ViewAddHost
+		return m, nil
+	}
+
 	for i := range m.tabs {
 		if m.tabs[i].Connecting {
 			if m.tabs[i].Session != nil {
