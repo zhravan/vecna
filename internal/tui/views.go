@@ -912,6 +912,9 @@ func (m Model) viewFileTransfer() string {
 	leftPanel := stylePanel.Width(panelW).Height(maxRows + 3).Render(strings.Join(leftLines, "\n"))
 
 	rightLines := []string{rightTitle, styleDim.Render(m.transferRemoteCwd), ""}
+	if m.transferRemoteCwd != "" {
+		rightLines = append(rightLines, styleDim.Render("  Drop local files here → upload"))
+	}
 	if m.transferRemoteLoading {
 		rightLines = append(rightLines, styleDim.Render("  Loading..."))
 	} else {
