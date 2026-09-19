@@ -181,6 +181,14 @@ var (
 			Padding(0, 2).
 			Border(lipgloss.RoundedBorder(), false, false, true, false).
 			BorderForeground(colorHighlight)
+
+	styleQuickHelp = lipgloss.NewStyle().
+			Background(colorSurface).
+			Foreground(colorSubtle).
+			BorderTop(true).
+			BorderStyle(lipgloss.Border{Top: "─"}).
+			BorderForeground(colorHighlight).
+			Padding(0, 1)
 )
 
 // renderBrand returns "◈ VECNA" with cycling accent colors (Tokyo Night–style palette).

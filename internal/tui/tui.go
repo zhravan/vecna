@@ -516,6 +516,45 @@ func (m Model) switchToTabByIndex(idx int) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) switchToRelativeTab(delta int) (Model, tea.Cmd) {
+	if len(m.tabs) <= 1 || delta == 0 {
+		return m, nil
+	}
+	next := m.currentTabIndex + delta
+	if next >= len(m.tabs) {
+		next = 0
+	}
+	if next < 0 {
+		next = len(m.tabs) - 1
+	}
+	return m.switchToTabByIndex(next)
+}
+
+func (m Model) handleTransferDrop(payload string) (tea.Cmd, bool) {
+	paths := normalizeDroppedPaths(payload)
+	if len(paths) == 0 || m.transferMode == 1 || m.transferRunning || m.sshHost == nil {
+		return nil, false
+	}
+	conn := sftp.HostConnection{
+		User:         m.sshHost.User,
+		Hostname:     m.sshHost.Hostname,
+		Port:         m.sshHost.Port,
+		IdentityFile: m.sshHost.IdentityFile,
+	}
+	m.transferFocusPanel = 1
+	m.transferRunning = true
+	m.transferOutput = ""
+	m.transferSelectedLocal = make(map[string]bool)
+	suffix := ""
+	if len(paths) != 1 {
+		suffix = "s"
+	}
+	m.toast = fmt.Sprintf("Dropped %d file%s → %s", len(paths), suffix, m.transferRemoteCwd)
+	m.toastSuccess = true
+	m.toastTimer = 35
+	return transferCmdMulti(conn, "push", paths, m.transferRemoteCwd), true
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Optional: Cmd/Win+digit as CSI u when VECNA_KITTY_KEYBOARD=1 (see tabkeys.go).
 	if m.view == ViewHome {
@@ -525,6 +564,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if delta, ok := tabSwitchDeltaFromKey(msg.String()); ok && !mouseTabBarBlockedByView(m.view) && !msg.Paste {
+			return m.switchToRelativeTab(delta)
+		}
+		if m.view == ViewFileTransfer && msg.Paste {
+			if cmd, ok := m.handleTransferDrop(string(msg.Runes)); ok {
+				return m, cmd
+			}
+		}
 		switch m.view {
 		case ViewHome:
 			// SSH tab: Alt/Option+digit jumps tabs (digits alone go to the remote shell).
@@ -540,14 +587,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			switch msg.String() {
-			case "ctrl+right":
-				if len(m.tabs) > 1 && m.currentTabIndex < len(m.tabs)-1 {
-					m.currentTabIndex++
-					if t := &m.tabs[m.currentTabIndex]; t.Session != nil {
-						return m, m.readSSHOutput(t.Id, t.Session)
-					}
-				}
-				return m, nil
 			case "ctrl+left":
 				if m.currentTabIndex > 0 {
 					m.currentTabIndex--
@@ -2342,14 +2381,21 @@ func (m Model) View() string {
 	default:
 		body = m.viewTabContent()
 	}
-	full := lipgloss.JoinVertical(lipgloss.Left, tabBar, body)
-	// Cap total lines so the tab bar (line 1) is never scrolled off.
+	footer := m.renderQuickHelp()
+	full := lipgloss.JoinVertical(lipgloss.Left, tabBar, body, footer)
 	if m.height > 0 {
 		full = strings.ReplaceAll(full, "\r\n", "\n")
 		lines := strings.Split(full, "\n")
 		if len(lines) > m.height {
-			lines = lines[:m.height]
-			full = strings.Join(lines, "\n")
+			bodyLines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+			keep := m.height - 2
+			if keep < 1 {
+				keep = 1
+			}
+			if len(bodyLines) > keep {
+				bodyLines = bodyLines[:keep]
+			}
+			full = strings.Join(append([]string{tabBar}, append(bodyLines, footer)...), "\n")
 		}
 	}
 	return stripTTYBell(full)

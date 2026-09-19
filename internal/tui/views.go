@@ -103,6 +103,26 @@ func stripTTYBell(s string) string {
 	return strings.ReplaceAll(s, "\x07", "")
 }
 
+func (m Model) renderQuickHelp() string {
+	hints := []string{keyHint("Ctrl+Tab", "next tab"), keyHint("Ctrl+Shift+Tab", "prev tab")}
+	switch {
+	case m.view == ViewFileTransfer:
+		hints = append(hints, keyHint("Tab", "pane"), keyHint("Enter", "open/transfer"), keyHint("Space", "select"), keyHint("drop", "upload"))
+	case m.currentTabIndex > 0 && m.view == ViewHome:
+		hints = append(hints, keyHint("R", "reconnect"), keyHint("Ctrl+\\", "split"), keyHint("Esc", "close"))
+	case m.view == ViewHome:
+		hints = append(hints, keyHint("1-9", "jump"), keyHint("c", "connect"), keyHint("t", "transfer"), keyHint("/", "search"))
+	default:
+		hints = append(hints, keyHint("Enter", "select"), keyHint("Esc", "back"))
+	}
+	hints = append(hints, keyHint("?", "help"), keyHint("q", "quit"))
+	help := strings.Join(hints, "  ")
+	if m.width > 0 && lipgloss.Width(help) > m.width-2 {
+		help = keyHint("Ctrl+Tab", "tabs") + "  " + keyHint("?", "help") + "  " + keyHint("q", "quit")
+	}
+	return styleQuickHelp.Render(help)
+}
+
 func (m Model) viewHome() string {
 	if m.width == 0 {
 		return renderLoader(40, 12, m.animFrame, "Loading...")
@@ -128,15 +148,11 @@ func (m Model) viewHome() string {
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, hostsPanel, " ", detailPanel)
 
-	statusBar := m.renderStatusBar()
-
 	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
 		content,
-		"",
-		statusBar,
 	)
 
 	return m.renderWithToast(mainView)
@@ -896,6 +912,9 @@ func (m Model) viewFileTransfer() string {
 	leftPanel := stylePanel.Width(panelW).Height(maxRows + 3).Render(strings.Join(leftLines, "\n"))
 
 	rightLines := []string{rightTitle, styleDim.Render(m.transferRemoteCwd), ""}
+	if m.transferRemoteCwd != "" {
+		rightLines = append(rightLines, styleDim.Render("  Drop local files here → upload"))
+	}
 	if m.transferRemoteLoading {
 		rightLines = append(rightLines, styleDim.Render("  Loading..."))
 	} else {
@@ -1018,10 +1037,11 @@ func (m Model) renderTabBar() string {
 		if t.Connecting {
 			title = t.Title + " …"
 		}
+		label := fmt.Sprintf("%d %s", i+1, title)
 		if i == m.currentTabIndex {
-			parts = append(parts, styleTabActive.Render(title))
+			parts = append(parts, styleTabActive.Render(label))
 		} else {
-			parts = append(parts, styleTab.Render(title))
+			parts = append(parts, styleTab.Render(label))
 		}
 	}
 	line := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
