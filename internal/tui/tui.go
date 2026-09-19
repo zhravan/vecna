@@ -536,9 +536,9 @@ func (m Model) handleTransferDrop(payload string) (tea.Cmd, bool) {
 		return nil, false
 	}
 	conn := sftp.HostConnection{
-		User: m.sshHost.User,
-		Hostname: m.sshHost.Hostname,
-		Port: m.sshHost.Port,
+		User:         m.sshHost.User,
+		Hostname:     m.sshHost.Hostname,
+		Port:         m.sshHost.Port,
 		IdentityFile: m.sshHost.IdentityFile,
 	}
 	m.transferFocusPanel = 1
