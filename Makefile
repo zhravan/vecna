@@ -1,6 +1,6 @@
 BINARY := vecna
 VERSION ?= $(shell cat version.txt 2>/dev/null | tr -d ' \n\r' || echo "dev")
-LDFLAGS := -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=$(VERSION)"
+LDFLAGS := -ldflags "-s -w -X github.com/zhravan/vecna/cmd.Version=$(VERSION)"
 
 .PHONY: build run clean install lint test version bump-patch bump-minor bump-major
 

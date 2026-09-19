@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
 
 permissions:
   contents: write
@@ -53,12 +53,12 @@ jobs:
         run: |
           if [ "${{ matrix.goos }}" = "windows" ]; then
             CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
-              -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
+              -ldflags "-s -w -X github.com/zhravan/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
               -o vecna.exe .
             zip vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip vecna.exe
           else
             CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
-              -ldflags "-s -w -X github.com/shravan20/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
+              -ldflags "-s -w -X github.com/zhravan/vecna/cmd.Version=${{ steps.version.outputs.VERSION }}" \
               -o vecna .
             tar -czvf vecna_${{ steps.version.outputs.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz vecna
           fi
@@ -97,6 +97,10 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
           ls release/
+
+      - name: Generate checksums
+        working-directory: release
+        run: sha256sum * > SHA256SUMS.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2

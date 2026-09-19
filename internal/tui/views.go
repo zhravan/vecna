@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/shravan20/vecna/internal/config"
+	"github.com/zhravan/vecna/internal/config"
 )
 
 // wrapLines breaks text into lines and wraps each line to maxWidth runes (terminal column width).
