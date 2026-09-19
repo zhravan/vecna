@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestTabSwitchDeltaFromKey(t *testing.T) {
@@ -51,5 +53,26 @@ func TestNormalizeDroppedPaths(t *testing.T) {
 				t.Fatalf("got %v, want %d paths", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRenderTabBarKeepsVisibleLabels(t *testing.T) {
+	m := Model{
+		width: 80,
+		tabs: []tab{
+			{Id: 0, Kind: tabKindHome, Title: "Hosts"},
+			{Id: 1, Kind: tabKindSSH, Title: "production"},
+		},
+		currentTabIndex: 1,
+	}
+	got := m.renderTabBar()
+	if !strings.Contains(got, "Hosts") || !strings.Contains(got, "production") {
+		t.Fatalf("tab bar lost visible labels: %q", got)
+	}
+	if h := lipgloss.Height(got); h != 1 {
+		t.Fatalf("tab bar height = %d, want 1", h)
+	}
+	if w := lipgloss.Width(got); w != 80 {
+		t.Fatalf("tab bar width = %d, want 80", w)
 	}
 }
