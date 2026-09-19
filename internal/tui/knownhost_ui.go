@@ -77,9 +77,42 @@ func (m Model) updateKnownHostConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Changed keys intentionally have no trust/replace action here.
 	var changed *vecnassh.ChangedHostKeyError
 	if errors.As(m.err, &changed) {
+		if m.knownHostReplacePending {
+			if msg.String() == "y" || msg.String() == "Y" || msg.String() == "enter" {
+				if m.sshHost == nil || changed.Key == nil {
+					return m.cancelKnownHostPrompt()
+				}
+				if err := vecnassh.ReplaceHostKey(knownHostAddress(*m.sshHost), changed.Key); err != nil {
+					m.toast = fmt.Sprintf("Failed to replace host key: %v", err)
+					m.toastSuccess = false
+					m.toastTimer = 80
+					m.knownHostReplacePending = false
+					return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+				}
+
+				host := *m.sshHost
+				m.err = nil
+				m.sshHost = nil
+				m.knownHostReplacePending = false
+				m.view = ViewHome
+				return m, m.connectSSH(host)
+			}
+			if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" {
+				m.knownHostReplacePending = false
+				return m, nil
+			}
+			return m, nil
+		}
+
+		if msg.String() == "r" || msg.String() == "R" {
+			if m.sshHost == nil || changed.Key == nil {
+				return m.cancelKnownHostPrompt()
+			}
+			m.knownHostReplacePending = true
+			return m, nil
+		}
 		return m, nil
 	}
 	return m.cancelKnownHostPrompt()
