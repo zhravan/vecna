@@ -184,7 +184,7 @@ type Model struct {
 	// knownHostFromAdd is true while the add-host form is waiting for
 	// explicit SSH host-key trust. The form stays intact so accepting the
 	// key retries validation and then saves the host.
-	knownHostFromAdd         bool
+	knownHostFromAdd        bool
 	knownHostReplacePending bool
 }
 
