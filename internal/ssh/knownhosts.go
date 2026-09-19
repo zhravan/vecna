@@ -138,6 +138,18 @@ func HostKeyAlgorithms(host string) ([]string, error) {
 }
 
 func TrustHostKey(host string, key ssh.PublicKey) error {
+	return writeTrustedHostKey(host, key, false)
+}
+
+// ReplaceHostKey explicitly rotates a trusted host key after the user has
+// verified the presented fingerprint. Existing plaintext entries for the host
+// are removed before the new key is written. Hashed known_hosts entries are
+// preserved because their host identity cannot be safely matched from text.
+func ReplaceHostKey(host string, key ssh.PublicKey) error {
+	return writeTrustedHostKey(host, key, true)
+}
+
+func writeTrustedHostKey(host string, key ssh.PublicKey, replace bool) error {
 	if key == nil {
 		return fmt.Errorf("cannot trust empty host key")
 	}
@@ -146,23 +158,56 @@ func TrustHostKey(host string, key ssh.PublicKey) error {
 		return err
 	}
 	line := knownhosts.Line([]string{knownhosts.Normalize(host)}, key)
+
 	knownHostsMu.Lock()
 	defer knownHostsMu.Unlock()
+
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read known_hosts: %w", err)
 	}
-	if strings.Contains(string(existing), line) {
+
+	if !replace && strings.Contains(string(existing), line) {
 		return nil
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+
+	lines := strings.Split(string(existing), "\n")
+	normalizedHost := knownhosts.Normalize(host)
+	filtered := make([]string, 0, len(lines)+1)
+	for _, entry := range lines {
+		trimmed := strings.TrimSpace(entry)
+		if replace && trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			fields := strings.Fields(trimmed)
+			if len(fields) >= 2 {
+				for _, entryHost := range strings.Split(fields[0], ",") {
+					if entryHost == normalizedHost {
+						trimmed = ""
+						break
+					}
+				}
+			}
+		}
+		if trimmed != "" {
+			filtered = append(filtered, entry)
+		}
+	}
+	filtered = append(filtered, line)
+
+	content := strings.Join(filtered, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		return fmt.Errorf("write known_hosts: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return fmt.Errorf("chmod known_hosts: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("open known_hosts: %w", err)
 	}
 	defer f.Close()
-	if _, err := fmt.Fprintln(f, line); err != nil {
-		return fmt.Errorf("write known_hosts: %w", err)
-	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("sync known_hosts: %w", err)
 	}
