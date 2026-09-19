@@ -56,7 +56,6 @@ func TestNormalizeDroppedPaths(t *testing.T) {
 	}
 }
 
-
 func TestRenderTabBarKeepsVisibleLabels(t *testing.T) {
 	m := Model{
 		width: 80,
