@@ -2241,6 +2241,7 @@ func (m *Model) saveHost() {
 	m.view = ViewHome
 	m.inputs = nil
 	m.showPassword = false
+	m.knownHostFromAdd = false
 }
 
 func (m Model) View() string {
