@@ -170,17 +170,13 @@ var (
 
 	styleTab = lipgloss.NewStyle().
 			Foreground(colorSubtle).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder(), false, false, true, false).
-			BorderForeground(colorBorderDim)
+			Padding(0, 2)
 
 	styleTabActive = lipgloss.NewStyle().
 			Foreground(colorCyan).
 			Bold(true).
 			Background(colorSurface).
-			Padding(0, 2).
-			Border(lipgloss.RoundedBorder(), false, false, true, false).
-			BorderForeground(colorHighlight)
+			Padding(0, 2)
 
 	styleQuickHelp = lipgloss.NewStyle().
 			Background(colorSurface).
