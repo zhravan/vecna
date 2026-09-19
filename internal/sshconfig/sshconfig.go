@@ -33,7 +33,7 @@ func Load(path string) ([]SSHConfigHost, error) {
 		path = filepath.Join(home, ".ssh", "config")
 	}
 
-	b, err := os.ReadFile(path)
+	b, err := ExpandIncludes(path)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +57,10 @@ func Load(path string) ([]SSHConfigHost, error) {
 
 		hostname, _ := cfg.Get(alias, "HostName")
 		hostname = strings.TrimSpace(hostname)
-		// Skip blocks with no HostName (e.g. some wildcard templates)
+		// OpenSSH permits Host aliases without an explicit HostName; in that case
+		// the alias itself is the destination.
 		if hostname == "" {
-			continue
+			hostname = alias
 		}
 
 		user, _ := cfg.Get(alias, "User")

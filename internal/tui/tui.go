@@ -286,7 +286,7 @@ func New() Model {
 	runCmdF.Placeholder = "Filter by label or command..."
 	runCmdF.CharLimit = 80
 	runCmdF.Width = 40
-	return Model{
+	m := Model{
 		view:                 ViewHome,
 		keys:                 DefaultKeyMap(),
 		hosts:                config.GetHosts(),
@@ -302,6 +302,18 @@ func New() Model {
 		currentTabIndex:      0,
 		nextTabId:            1,
 	}
+	if len(m.hosts) == 0 {
+		if candidates, err := sshconfig.Load(""); err == nil && len(candidates) > 0 {
+			m.importCandidates = candidates
+			m.importSelected = make(map[string]bool, len(candidates))
+			for _, candidate := range candidates {
+				m.importSelected[candidate.Name] = true
+			}
+			m.importCursor = 0
+			m.view = ViewImportSSH
+		}
+	}
+	return m
 }
 
 func (m *Model) initAddHostInputs() {
