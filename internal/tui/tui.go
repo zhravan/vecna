@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -172,6 +173,11 @@ type Model struct {
 
 	// Recents (persisted in ~/.config/vecna/state.json)
 	appState state.State
+
+	// knownHostFromAdd is true while the add-host form is waiting for
+	// explicit SSH host-key trust. The form stays intact so accepting the
+	// key retries validation and then saves the host.
+	knownHostFromAdd bool
 }
 
 type activeForward struct {
@@ -2153,6 +2159,16 @@ func (m *Model) saveHost() {
 	m.toastTimer = 100
 
 	if err := ssh.ValidateConnection(sshHost, password); err != nil {
+		var unknown *ssh.UnknownHostKeyError
+		var changed *ssh.ChangedHostKeyError
+		if errors.As(err, &unknown) || errors.As(err, &changed) {
+			h := sshHost
+			m.sshHost = &h
+			m.err = err
+			m.knownHostFromAdd = true
+			m.view = ViewKnownHostConfirm
+			return
+		}
 		m.toast = fmt.Sprintf("Validation failed: %v", err)
 		m.toastSuccess = false
 		m.toastTimer = 50
@@ -2660,10 +2676,9 @@ func (m Model) connectSSH(host config.Host) tea.Cmd {
 		select {
 		case res := <-ch:
 			if res.err != nil {
-				if _, ok := res.err.(*ssh.UnknownHostKeyError); ok {
-					return sshHostKeyErrorMsg{TabId: 0, Err: res.err}
-				}
-				if _, ok := res.err.(*ssh.ChangedHostKeyError); ok {
+				var unknown *ssh.UnknownHostKeyError
+				var changed *ssh.ChangedHostKeyError
+				if errors.As(res.err, &unknown) || errors.As(res.err, &changed) {
 					return sshHostKeyErrorMsg{TabId: 0, Err: res.err}
 				}
 				return sshErrorMsg{0, res.err.Error()}
