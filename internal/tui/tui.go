@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/zhravan/vecna/internal/config"
+	"github.com/zhravan/vecna/internal/monitoring"
 	"github.com/zhravan/vecna/internal/sftp"
 	"github.com/zhravan/vecna/internal/ssh"
 	"github.com/zhravan/vecna/internal/sshconfig"
@@ -160,6 +161,10 @@ type Model struct {
 	// Active SSH count from server (who | wc -l); -1 = unknown/error
 	activeSSHCountByHost     map[string]int
 	fetchingActiveSSHForHost string
+	liveStatsByHost          map[string]monitoring.Stats
+	liveStatsPrev            map[string]monitoring.Stats
+	liveStatsAt              map[string]time.Time
+	monitoringInFlight       bool
 
 	// Version/update
 	version          string
@@ -297,6 +302,9 @@ func New() Model {
 		selectedHostNames:    make(map[string]bool),
 		lastSSHAt:            make(map[string]time.Time),
 		activeSSHCountByHost: make(map[string]int),
+		liveStatsByHost:      make(map[string]monitoring.Stats),
+		liveStatsPrev:        make(map[string]monitoring.Stats),
+		liveStatsAt:          make(map[string]time.Time),
 		tabs:                 []tab{{Id: 0, Kind: tabKindHome, Title: "Hosts"}},
 		currentTabIndex:      0,
 		nextTabId:            1,
@@ -783,7 +791,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// mouse support ready
 		return m.handleMouse(msg)
 
+	case systemStatsResultMsg:
+		m.monitoringInFlight = false
+		if msg.Err == nil {
+			prev, ok := m.liveStatsByHost[msg.HostName]
+			if ok {
+				dt := time.Since(m.liveStatsAt[msg.HostName]).Seconds()
+				if dt > 0 {
+					msg.Stats.NetworkRxBytesPerSec = float64(msg.Stats.NetworkRxBytes-prev.NetworkRxBytes) / dt
+					msg.Stats.NetworkTxBytesPerSec = float64(msg.Stats.NetworkTxBytes-prev.NetworkTxBytes) / dt
+				}
+			}
+			m.liveStatsByHost[msg.HostName] = msg.Stats
+			m.liveStatsAt[msg.HostName] = time.Now()
+		}
+		return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+
 	case tickMsg:
+		if m.currentTabIndex == 0 && len(m.tabs) > 0 {
+			entries := m.filteredHostEntries()
+			if len(entries) > 0 && m.cursor < len(entries) {
+				h := entries[m.cursor].Host
+				for i := 1; i < len(m.tabs); i++ {
+					if m.tabs[i].Host.Name == h.Name && m.tabs[i].Session != nil && !m.monitoringInFlight {
+						m.monitoringInFlight = true
+						return m, fetchLiveStatsCmd(h, m.tabs[i].Session)
+					}
+				}
+			}
+		}
 		if m.toastTimer > 0 {
 			m.toastTimer--
 			if m.toastTimer == 0 {
@@ -2349,6 +2385,8 @@ func filterTransferEntries(entries []transferFileEntry, query string) []transfer
 	return out
 }
 
+type systemStatsResultMsg struct { HostName string; Stats monitoring.Stats; Err error }
+
 type activeSSHCountResultMsg struct {
 	HostName string
 	Count    int // -1 on error
@@ -2426,6 +2464,16 @@ func runCommandCmd(host config.Host, command string) tea.Msg {
 }
 
 // fetchActiveSSHCountCmd runs "who 2>/dev/null | wc -l" on the host and returns the count (from server).
+func fetchLiveStatsCmd(host config.Host, session *ssh.Session) tea.Cmd {
+	return func() tea.Msg {
+		if session == nil { return systemStatsResultMsg{HostName: host.Name, Err: fmt.Errorf("host is not connected")} }
+		out, err := session.Exec(monitoring.Command())
+		if err != nil { return systemStatsResultMsg{HostName: host.Name, Err: err} }
+		stats, err := monitoring.Parse(out)
+		return systemStatsResultMsg{HostName: host.Name, Stats: stats, Err: err}
+	}
+}
+
 func fetchActiveSSHCountCmd(host config.Host) tea.Cmd {
 	return func() tea.Msg {
 		out := runCommandCmd(host, "who 2>/dev/null | wc -l")
