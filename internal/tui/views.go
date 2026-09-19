@@ -1031,26 +1031,57 @@ func (m Model) viewTabContent() string {
 }
 
 func (m Model) renderTabBar() string {
+	// Build and measure each tab before joining. Never count raw ANSI escape
+	// sequences as visible runes: doing so can truncate a styled tab halfway
+	// through an escape sequence and make the entire tab strip disappear.
+	if len(m.tabs) == 0 {
+		return styleTabBar.Width(m.width).Render("  Hosts")
+	}
+
 	var parts []string
+	usedWidth := 0
+	maxWidth := m.width
+	if maxWidth < 1 {
+		maxWidth = 80
+	}
+
 	for i, t := range m.tabs {
-		title := t.Title
+		title := strings.TrimSpace(t.Title)
+		if title == "" {
+			title = "SSH"
+		}
 		if t.Connecting {
-			title = t.Title + " …"
+			title += " …"
 		}
+
+		// Keep long host names from consuming the whole strip.
+		if lipgloss.Width(title) > 28 {
+			runes := []rune(title)
+			title = string(runes[:25]) + "…"
+		}
+
 		label := fmt.Sprintf("%d %s", i+1, title)
+		tabStyle := styleTab
 		if i == m.currentTabIndex {
-			parts = append(parts, styleTabActive.Render(label))
-		} else {
-			parts = append(parts, styleTab.Render(label))
+			tabStyle = styleTabActive
 		}
+		rendered := tabStyle.Render(label)
+		tabWidth := lipgloss.Width(rendered)
+
+		if usedWidth+tabWidth > maxWidth {
+			// Preserve a visible overflow indicator rather than emitting a
+			// partially-truncated ANSI string.
+			if usedWidth+lipgloss.Width(styleTab.Render("…")) <= maxWidth {
+				parts = append(parts, styleTab.Render("…"))
+			}
+			break
+		}
+		parts = append(parts, rendered)
+		usedWidth += tabWidth
 	}
+
 	line := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	// Keep tab bar to one line so it never pushes off screen; truncate if too wide.
-	if m.width > 4 && utf8.RuneCountInString(line) > m.width {
-		runes := []rune(line)
-		line = string(runes[:m.width-3]) + "…"
-	}
-	return line
+	return styleTabBar.Width(maxWidth).Render(line)
 }
 
 func (m Model) viewSplitSSHTabs() string {
