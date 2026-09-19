@@ -248,6 +248,16 @@ func (m Model) renderDetailPanel(width, height int) string {
 			activeSSHStr = "—"
 		}
 		lines = append(lines, fmt.Sprintf("%s  %s", styleKey.Render("Active SSH"), styleDetailValue.Render(activeSSHStr)))
+		if stats, ok := m.liveStatsByHost[h.Name]; ok {
+			lines = append(lines, "")
+			lines = append(lines, stylePanelTitleActions.Render("LIVE SYSTEM"))
+			lines = append(lines,
+				fmt.Sprintf("%s  %s", styleKey.Render("CPU"), styleDetailValue.Render(fmt.Sprintf("%.1f%%", stats.CPUPercent))),
+				fmt.Sprintf("%s  %s", styleKey.Render("RAM"), styleDetailValue.Render(fmt.Sprintf("%.1f%%", stats.MemoryPercent))),
+				fmt.Sprintf("%s  %s", styleKey.Render("Disk"), styleDetailValue.Render(fmt.Sprintf("%.1f%%", stats.DiskPercent))),
+				fmt.Sprintf("%s  %s", styleKey.Render("Network"), styleDetailValue.Render(fmt.Sprintf("↓ %.1f KB/s  ↑ %.1f KB/s", stats.NetworkRxBytesPerSec/1024, stats.NetworkTxBytesPerSec/1024))),
+			)
+		}
 		if at, ok := m.lastSSHAt[h.Name]; ok {
 			ago := time.Since(at)
 			var lastStr string
