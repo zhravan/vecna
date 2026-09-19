@@ -48,23 +48,38 @@ func TestTrustHostKeyWritesOpenSSHEntry(t *testing.T) {
 	}
 }
 
-
 func TestTrustHostKeyIsIdempotent(t *testing.T) {
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(home, 0700); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(home, 0700); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	_, private, err := ed25519.GenerateKey(nil)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	key, err := ssh.NewPublicKey(private.Public())
-	if err != nil { t.Fatal(err) }
-	if err := TrustHostKey("example.com:22", key); err != nil { t.Fatal(err) }
-	if err := TrustHostKey("example.com:22", key); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := TrustHostKey("example.com:22", key); err != nil {
+		t.Fatal(err)
+	}
+	if err := TrustHostKey("example.com:22", key); err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(filepath.Join(home, ".ssh", "known_hosts"))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	lines := 0
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) != "" { lines++ }
+		if strings.TrimSpace(line) != "" {
+			lines++
+		}
 	}
-	if lines != 1 { t.Fatalf("expected one trusted entry, got %d", lines) }
+	if lines != 1 {
+		t.Fatalf("expected one trusted entry, got %d", lines)
+	}
 }

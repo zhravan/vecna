@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	skeemaknownhosts "github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
-	skeemaknownhosts "github.com/skeema/knownhosts"
 )
 
 var errHostKeyProbe = errors.New("vecna: host key probe complete")
@@ -120,7 +120,6 @@ func HostKeyCallback() (ssh.HostKeyCallback, error) {
 		return nil
 	}, nil
 }
-
 
 // HostKeyAlgorithms returns the host-key algorithms pinned for host in known_hosts.
 // SSH servers may offer several host-key types; constraining negotiation to the

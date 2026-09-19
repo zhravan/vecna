@@ -504,7 +504,7 @@ func (m Model) viewRunCommand() string {
 	if len(m.runCommandMultiResults) > 0 {
 		var blocks []string
 		for _, r := range m.runCommandMultiResults {
-			block := styleRunHostHeader.Render("═══ "+r.Host+" ═══")
+			block := styleRunHostHeader.Render("═══ " + r.Host + " ═══")
 			if r.Err != nil {
 				block += " " + styleError.Render("(error)")
 			}
@@ -1038,10 +1038,14 @@ func (m Model) viewSplitSSHTabs() string {
 		return m.viewSSHTab(m.tabs[m.currentTabIndex])
 	}
 	other := m.currentTabIndex + 1
-	if other >= len(m.tabs) { other = m.currentTabIndex - 1 }
+	if other >= len(m.tabs) {
+		other = m.currentTabIndex - 1
+	}
 	leftWidth := (m.width - 2) / 2
 	height := m.height - 4
-	if height < 6 { height = 6 }
+	if height < 6 {
+		height = 6
+	}
 	left := renderSSHPane(m.tabs[m.currentTabIndex], leftWidth, height, m.tabs[m.currentTabIndex].Id == m.tabs[m.currentTabIndex].Id)
 	right := renderSSHPane(m.tabs[other], m.width-leftWidth-2, height, false)
 	bar := styleStatusBar.Render(keyHint("ctrl+\\", "split") + "  " + keyHint("ctrl+←/→", "switch pane") + "  " + keyHint("esc", "close active"))
@@ -1050,7 +1054,11 @@ func (m Model) viewSplitSSHTabs() string {
 
 func renderSSHPane(t tab, width, height int, active bool) string {
 	title := t.Title
-	if active { title += "  ●" } else { title += "  ○" }
+	if active {
+		title += "  ●"
+	} else {
+		title += "  ○"
+	}
 	if t.Connecting {
 		return stylePanelSSH.Width(width).Height(height).Render(stylePanelTitleActions.Render(title) + "\n\nConnecting...")
 	}
@@ -1061,7 +1069,9 @@ func renderSSHPane(t tab, width, height int, active bool) string {
 		output = "Waiting for output..."
 	}
 	lines := wrapLines(output, width-4)
-	if len(lines) > height-3 { lines = lines[len(lines)-height+3:] }
+	if len(lines) > height-3 {
+		lines = lines[len(lines)-height+3:]
+	}
 	content := stylePanelTitleActions.Render(title) + "\n" + strings.Join(lines, "\n")
 	return stylePanelSSH.Width(width).Height(height).Render(content)
 }

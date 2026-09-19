@@ -20,7 +20,7 @@ import (
 // Must NOT use flag 4 (report all keys as escape codes): that breaks normal KeyMsg delivery.
 // Flags here are 1|2|8 = 11 (disambiguate, alternate, text).
 const (
-	EnvKittyKeyboard = "VECNA_KITTY_KEYBOARD"
+	EnvKittyKeyboard       = "VECNA_KITTY_KEYBOARD"
 	kittyKeyboardPushFlags = "\x1b[>11u"
 	kittyKeyboardPop       = "\x1b[<u"
 )

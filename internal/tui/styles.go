@@ -94,11 +94,11 @@ var (
 			Italic(true)
 
 	styleRunHostHeader = lipgloss.NewStyle().
-			Foreground(colorMagenta).
-			Bold(true)
+				Foreground(colorMagenta).
+				Bold(true)
 
 	styleDetailValue = lipgloss.NewStyle().
-			Foreground(colorTeal)
+				Foreground(colorTeal)
 
 	styleListItem = lipgloss.NewStyle().
 			Foreground(colorFg)
@@ -158,11 +158,11 @@ var (
 			MarginTop(1)
 
 	styleToastSuccess = lipgloss.NewStyle().
-			Background(colorGreen).
-			Foreground(lipgloss.Color("#1a1b26")).
-			Bold(true).
-			Padding(0, 2).
-			MarginTop(1)
+				Background(colorGreen).
+				Foreground(lipgloss.Color("#1a1b26")).
+				Bold(true).
+				Padding(0, 2).
+				MarginTop(1)
 
 	stylePurple = lipgloss.NewStyle().
 			Foreground(colorPurple).
