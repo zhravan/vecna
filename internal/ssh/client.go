@@ -207,7 +207,6 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 
 	var authMethods []ssh.AuthMethod
 	var keyMethods []ssh.AuthMethod
-	var keyAdded bool
 	var keyParseErr error
 
 	if !skipKeyIfNotDeployed {
@@ -237,7 +236,6 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 				continue
 			}
 			keyMethods = append(keyMethods, ssh.PublicKeys(signer))
-			keyAdded = true
 			if h.IdentityFile != "" {
 				break
 			}
@@ -260,7 +258,6 @@ func buildSSHConfig(h Host, password string, skipKeyIfNotDeployed bool) (*ssh.Cl
 		authMethods = append(authMethods, ssh.Password(password))
 	}
 	authMethods = append(authMethods, keyMethods...)
-	_ = keyAdded
 
 	if len(authMethods) == 0 {
 		if keyParseErr != nil {
