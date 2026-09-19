@@ -168,11 +168,24 @@ func (m Model) viewKnownHostConfirm() string {
 			"  "+changed.Fingerprint,
 			"",
 			"The saved key does not match the server key.",
-			"Vecna will not automatically replace or overwrite it.",
 			"",
-			"[C] Copy presented fingerprint",
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true).Render("[Esc] Close"),
 		)
+		if m.knownHostReplacePending {
+			lines = append(lines,
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true).Render("REPLACE TRUSTED HOST KEY?"),
+				"",
+				"This removes the saved plaintext entry and trusts the presented key.",
+				"Verify the fingerprint before continuing.",
+				"",
+				"[Enter/Y] Replace key    [Esc/N] Cancel",
+			)
+		} else {
+			lines = append(lines,
+				"[C] Copy presented fingerprint",
+				"[R] Replace trusted key",
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true).Render("[Esc] Close"),
+			)
+		}
 		return centerKnownHostModal(strings.Join(lines, "\n"))
 	}
 
