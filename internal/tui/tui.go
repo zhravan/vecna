@@ -1100,6 +1100,9 @@ func (m Model) updateAddHost(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputs = nil
 		m.showPassword = false
 		m.editingHostIndex = -1
+		m.knownHostFromAdd = false
+		m.err = nil
+		m.sshHost = nil
 		return m, nil
 
 	case "enter":
