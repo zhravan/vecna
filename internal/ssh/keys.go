@@ -61,7 +61,15 @@ func DeployPublicKey(host Host, password, publicKeyPath string) error {
 	if err != nil {
 		return err
 	}
+	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
+	knownAlgorithms, err := HostKeyAlgorithms(addr)
+	if err != nil {
+		return err
+	}
 	config := &ssh.ClientConfig{User: host.User, Auth: []ssh.AuthMethod{ssh.Password(password)}, HostKeyCallback: callback}
+	if len(knownAlgorithms) > 0 {
+		config.HostKeyAlgorithms = knownAlgorithms
+	}
 
 	addr := fmt.Sprintf("%s:%d", host.Hostname, host.Port)
 	client, err := ssh.Dial("tcp", addr, config)
